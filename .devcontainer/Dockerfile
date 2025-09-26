@@ -3,6 +3,11 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 # Create node user and group, set up home directory
 RUN groupadd -r node && useradd -r -g node -m -d /home/node -s /bin/bash node
 
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+
+# Create node user and group, set up home directory
+RUN groupadd -r node && useradd -r -g node -m -d /home/node -s /bin/bash node
+
 # Install Node.js 20, poppler-utils (for PDF parsing), and yarn (for frontend)
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
