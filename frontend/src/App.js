@@ -9,23 +9,34 @@ function App() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const onDrop = async (acceptedFiles) => {
     setFile(acceptedFiles[0]);
     setError(null);
+    setLoading(true);
+    setFlashcards([]);
+    setMetadata(null);
+    
     const formData = new FormData();
     formData.append('file', acceptedFiles[0]);
+    console.log('Uploading file:', acceptedFiles[0].name, 'size:', acceptedFiles[0].size);
 
     try {
-      const response = await axios.post('http://localhost:5000/upload', formData, {
+      const response = await axios.post('/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000, // 2 minutes timeout
       });
-      setFlashcards(response.data.flashcards);
+      console.log('Upload response:', response.data);
+      setFlashcards(response.data.flashcards || []);
       setMetadata(response.data.metadata);
       setCurrentIndex(0);
       setIsFlipped(false);
     } catch (err) {
-      setError(err.response?.data?.error || 'Upload failed');
+      console.error('Upload error:', err.message, err.response?.data, err.response?.status);
+      setError(err.response?.data?.error || 'Upload failed: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -51,9 +62,18 @@ function App() {
     <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-100">
       <h1 className="text-3xl font-bold text-primary mb-6">Edu Flashcard Generator</h1>
 
-      <div {...getRootProps()} className={`w-96 h-40 border-2 border-dashed border-primary rounded-lg flex items-center justify-center cursor-pointer mb-6 ${isDragActive ? 'bg-secondary' : 'bg-white'}`}>
-        <input {...getInputProps()} />
-        <p className="text-center text-gray-600">{isDragActive ? 'Drop the PDF here...' : 'Drag & drop a PDF here, or click to select'}</p>
+      <div {...getRootProps()} className={`w-96 h-40 border-2 border-dashed border-primary rounded-lg flex items-center justify-center cursor-pointer mb-6 ${isDragActive ? 'bg-secondary' : 'bg-white'} ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+        <input {...getInputProps()} disabled={loading} />
+        <div className="text-center">
+          {loading ? (
+            <div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+              <p className="text-gray-600">Processing PDF...</p>
+            </div>
+          ) : (
+            <p className="text-gray-600">{isDragActive ? 'Drop the PDF here...' : 'Drag & drop a PDF here, or click to select'}</p>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-red-500 mb-4">{error}</p>}
