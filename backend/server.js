@@ -13,8 +13,22 @@ const app = express();
 const upload = multer({ dest: 'uploads/' });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-app.use(cors());
-app.use(express.json());
+// Enhanced CORS configuration
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:8000',
+    /^https:\/\/8000--.*\.gitpod\.dev$/,
+    /^https:\/\/3000--.*\.gitpod\.dev$/,
+    /^https:\/\/.*\.gitpod\.dev$/
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 app.post('/upload', upload.single('file'), async (req, res) => {
   try {
@@ -55,47 +69,115 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     console.log('Chunks created:', chunks.length);
 
     const flashcards = [];
+    const extractedInfo = {
+      keyTerms: new Set(),
+      concepts: new Set(),
+      facts: new Set(),
+      definitions: new Set()
+    };
+
     for (const chunk of chunks) {
       console.log('Processing chunk:', chunk.substring(0, 50) + '...');
       
       try {
-        const prompt = `Generate educational flashcards from this text. Format each flashcard exactly as:
-Question: [question text]
-Answer: [answer text]
+        // Enhanced prompt for better information extraction
+        const prompt = `You are an expert educational content creator. Analyze this text and create high-quality flashcards that capture the most important information.
 
-Focus on key concepts, definitions, and important facts. Generate 3-5 flashcards from this text:
+INSTRUCTIONS:
+1. Extract key concepts, definitions, facts, formulas, processes, and relationships
+2. Create questions that test understanding, not just memorization
+3. Include different question types: definitions, explanations, applications, comparisons
+4. Make answers comprehensive but concise
+5. Focus on information that would be valuable for learning and retention
+
+Format each flashcard exactly as:
+Question: [clear, specific question]
+Answer: [comprehensive, accurate answer]
+
+Generate 4-6 high-quality flashcards from this text:
 
 ${chunk}`;
+
         const response = await openai.chat.completions.create({
           model: 'gpt-3.5-turbo',
           messages: [{ role: 'user', content: prompt }],
+          temperature: 0.7,
+          max_tokens: 1000,
         });
+        
         console.log('OpenAI response received');
-        flashcards.push(...parseFlashcards(response.choices[0].message.content));
+        const newCards = parseFlashcards(response.choices[0].message.content);
+        flashcards.push(...newCards);
+        
+        // Extract key information for metadata
+        newCards.forEach(card => {
+          const words = (card.question + ' ' + card.answer).toLowerCase().split(/\W+/);
+          words.forEach(word => {
+            if (word.length > 4 && !commonWords.includes(word)) {
+              extractedInfo.keyTerms.add(word);
+            }
+          });
+        });
+        
       } catch (openaiError) {
         console.log('OpenAI API error:', openaiError.message);
-        console.log('Generating fallback flashcards...');
+        console.log('Generating enhanced fallback flashcards...');
         
-        // Fallback: Generate simple flashcards from the text
-        const sentences = chunk.split(/[.!?]+/).filter(s => s.trim().length > 20);
-        for (let i = 0; i < Math.min(3, sentences.length); i++) {
+        // Enhanced fallback: Generate more meaningful flashcards
+        const sentences = chunk.split(/[.!?]+/).filter(s => s.trim().length > 30);
+        const paragraphs = chunk.split(/\n\s*\n/).filter(p => p.trim().length > 50);
+        
+        // Create definition-style flashcards
+        for (let i = 0; i < Math.min(2, sentences.length); i++) {
           const sentence = sentences[i].trim();
-          if (sentence) {
+          if (sentence && sentence.includes(' is ') || sentence.includes(' are ')) {
+            const parts = sentence.split(/ is | are /);
+            if (parts.length >= 2) {
+              flashcards.push({
+                question: `What ${parts[0].toLowerCase()}?`,
+                answer: parts.slice(1).join(' is/are ')
+              });
+            }
+          }
+        }
+        
+        // Create concept-based flashcards
+        for (let i = 0; i < Math.min(2, paragraphs.length); i++) {
+          const paragraph = paragraphs[i].trim();
+          if (paragraph) {
+            const firstSentence = paragraph.split(/[.!?]/)[0];
             flashcards.push({
-              question: `What is mentioned about: ${sentence.substring(0, 50)}...?`,
-              answer: sentence
+              question: `Explain the concept discussed in: "${firstSentence.substring(0, 60)}..."`,
+              answer: paragraph.substring(0, 200) + (paragraph.length > 200 ? '...' : '')
             });
           }
         }
       }
     }
 
-    console.log('Flashcards generated:', flashcards.length);
+    // Remove duplicate flashcards
+    const uniqueFlashcards = flashcards.filter((card, index, self) => 
+      index === self.findIndex(c => c.question.toLowerCase() === card.question.toLowerCase())
+    );
+
+    console.log('Flashcards generated:', uniqueFlashcards.length);
     fs.unlinkSync(filePath);
 
+    // Enhanced metadata
+    const enhancedMetadata = {
+      fileName: req.file.originalname,
+      pageCount: data.numpages,
+      chunkCount: chunks.length,
+      flashcardCount: uniqueFlashcards.length,
+      textLength: data.text.length,
+      keyTermsCount: extractedInfo.keyTerms.size,
+      processedAt: new Date().toISOString(),
+      fileSize: req.file.size
+    };
+
     res.json({
-      metadata: { fileName: req.file.originalname, pageCount: data.numpages, chunkCount: chunks.length },
-      flashcards,
+      metadata: enhancedMetadata,
+      flashcards: uniqueFlashcards,
     });
   } catch (error) {
     console.error('Upload error:', error.message, error.stack);
@@ -103,22 +185,50 @@ ${chunk}`;
   }
 });
 
+// Common words to filter out from key terms
+const commonWords = ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use'];
+
 function parseFlashcards(text) {
   const cards = [];
   const lines = text.split('\n');
   let question = '';
   let answer = '';
+  
   lines.forEach(line => {
-    if (line.startsWith('Question:')) {
-      if (question && answer) cards.push({ question, answer });
-      question = line.replace('Question:', '').trim();
+    const trimmedLine = line.trim();
+    if (trimmedLine.startsWith('Question:')) {
+      if (question && answer) {
+        cards.push({ 
+          question: question.trim(), 
+          answer: answer.trim(),
+          id: Date.now() + Math.random() // Add unique ID
+        });
+      }
+      question = trimmedLine.replace('Question:', '').trim();
       answer = '';
-    } else if (line.startsWith('Answer:')) {
-      answer = line.replace('Answer:', '').trim();
+    } else if (trimmedLine.startsWith('Answer:')) {
+      answer = trimmedLine.replace('Answer:', '').trim();
+    } else if (answer && trimmedLine) {
+      // Continue multi-line answers
+      answer += ' ' + trimmedLine;
     }
   });
-  if (question && answer) cards.push({ question, answer });
-  return cards;
+  
+  if (question && answer) {
+    cards.push({ 
+      question: question.trim(), 
+      answer: answer.trim(),
+      id: Date.now() + Math.random()
+    });
+  }
+  
+  // Filter out low-quality cards
+  return cards.filter(card => 
+    card.question.length > 10 && 
+    card.answer.length > 10 &&
+    !card.question.toLowerCase().includes('undefined') &&
+    !card.answer.toLowerCase().includes('undefined')
+  );
 }
 
 const PORT = process.env.PORT || 5002;
@@ -133,6 +243,49 @@ app.get('/', (req, res) => {
       health: 'GET / - Health check',
       test: 'GET /test-openai - Test OpenAI connection'
     }
+  });
+});
+
+// Save flashcard set endpoint
+app.post('/save-flashcards', (req, res) => {
+  try {
+    const { flashcards, metadata, name } = req.body;
+    
+    if (!flashcards || !metadata) {
+      return res.status(400).json({ error: 'Missing flashcards or metadata' });
+    }
+
+    const savedSet = {
+      id: Date.now().toString(),
+      name: name || metadata.fileName,
+      flashcards,
+      metadata: {
+        ...metadata,
+        savedAt: new Date().toISOString()
+      }
+    };
+
+    // In a real app, you'd save to a database
+    // For now, we'll return the set to be saved on frontend
+    res.json({ 
+      success: true, 
+      savedSet,
+      message: 'Flashcard set prepared for saving'
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Get saved flashcard sets (placeholder - in real app would query database)
+app.get('/saved-flashcards', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Saved flashcards are stored locally in browser',
+    sets: []
   });
 });
 
