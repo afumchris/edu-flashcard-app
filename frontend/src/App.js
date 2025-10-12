@@ -31,38 +31,39 @@ function App() {
     console.log('Uploading file:', acceptedFiles[0].name, 'size:', acceptedFiles[0].size);
 
     try {
-      const backendUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://5002--0199996a-a2e1-7b59-83b2-653833a630df.eu-central-1-01.gitpod.dev'
-        : 'http://localhost:5002';
-      
-      const response = await axios.post(`${backendUrl}/upload`, formData, {
+      // Use proxy configured in package.json
+      const response = await axios.post('/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 120000,
       });
       console.log('Upload response:', response.data);
       const flashcardsData = response.data.flashcards || [];
       const metadataData = response.data.metadata;
+      const chaptersData = response.data.chapters || [];
       
       setFlashcards(flashcardsData);
       setMetadata(metadataData);
       setCurrentIndex(0);
       setIsFlipped(false);
       
-      // Generate chapters dynamically based on flashcards
-      const generatedChapters = generateChapters(flashcardsData, metadataData);
-      setChapters(generatedChapters);
+      // Use chapters from backend if available, otherwise generate
+      const finalChapters = chaptersData.length > 0 
+        ? chaptersData 
+        : generateChapters(flashcardsData, metadataData);
+      
+      setChapters(finalChapters);
       
       // Add to sessions
       const newSession = {
         id: Date.now(),
         name: acceptedFiles[0].name,
         cards: flashcardsData.length,
-        chapters: generatedChapters.length,
+        chapters: finalChapters.length,
         timestamp: 'Just now',
         active: true,
         flashcards: flashcardsData,
         metadata: metadataData,
-        generatedChapters
+        generatedChapters: finalChapters
       };
       
       setSessions(prev => [newSession, ...prev.map(s => ({ ...s, active: false }))]);
@@ -275,10 +276,10 @@ function App() {
                 darkMode ? 'bg-neutral-800' : 'bg-white border border-neutral-200'
               }`}>
                 <h3 className={`font-semibold text-sm mb-1 ${darkMode ? 'text-neutral-100' : 'text-neutral-900'}`}>
-                  Chapters
+                  {metadata.documentTitle || 'Chapters'}
                 </h3>
-                <p className={`text-xs truncate ${darkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>
-                  {metadata.fileName}
+                <p className={`text-xs ${darkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                  {metadata.chapterCount || chapters.length} chapters • {metadata.flashcardCount || flashcards.length} cards
                 </p>
               </div>
               
