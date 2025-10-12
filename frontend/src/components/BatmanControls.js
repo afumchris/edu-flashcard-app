@@ -7,7 +7,8 @@ const BatmanControls = ({
   onNext, 
   onSave, 
   metadata,
-  flashcards 
+  flashcards,
+  darkMode 
 }) => {
   const progress = totalCards > 0 ? ((currentIndex + 1) / totalCards) * 100 : 0;
 
@@ -29,36 +30,58 @@ const BatmanControls = ({
   };
 
   return (
-    <div className="w-96 space-y-4">
+    <div className="w-full max-w-3xl space-y-4 mt-6">
       {/* Navigation Controls */}
-      <div className="flex justify-center space-x-4">
+      <div className="flex justify-center items-center space-x-3">
         <button
           onClick={onPrevious}
           disabled={currentIndex === 0}
-          className="bg-batman-gray text-batman-yellow px-6 py-3 rounded-lg font-batman font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-batman-lightGray transition-colors duration-300 shadow-lg"
+          className={`px-5 py-2.5 rounded-lg font-medium border disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 ${
+            darkMode 
+              ? 'bg-neutral-800 text-neutral-100 border-neutral-700 hover:bg-neutral-700' 
+              : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+          }`}
         >
-          ← PREVIOUS
+          ← Previous
+        </button>
+        
+        <button
+          className={`px-8 py-2.5 rounded-lg font-medium transition-all duration-300 ${
+            darkMode 
+              ? 'bg-primary text-white hover:bg-primary-dark' 
+              : 'bg-primary text-white hover:bg-primary-dark'
+          }`}
+        >
+          Flip Card
         </button>
         
         <button
           onClick={onNext}
           disabled={currentIndex === totalCards - 1}
-          className="bg-batman-gray text-batman-yellow px-6 py-3 rounded-lg font-batman font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-batman-lightGray transition-colors duration-300 shadow-lg"
+          className={`px-5 py-2.5 rounded-lg font-medium border disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 ${
+            darkMode 
+              ? 'bg-neutral-800 text-neutral-100 border-neutral-700 hover:bg-neutral-700' 
+              : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+          }`}
         >
-          NEXT →
+          Next →
         </button>
       </div>
 
       {/* Progress Bar */}
       <div className="space-y-2">
-        <div className="w-full bg-batman-gray rounded-full h-3 border border-batman-yellow">
+        <div className={`w-full rounded-full h-1.5 transition-colors duration-300 ${
+          darkMode ? 'bg-neutral-700' : 'bg-neutral-200'
+        }`}>
           <div 
-            className="bg-gradient-to-r from-batman-yellow to-yellow-400 h-full rounded-full transition-all duration-500 ease-out"
+            className="h-full rounded-full transition-all duration-500 ease-out bg-primary"
             style={{ width: `${progress}%` }}
           ></div>
         </div>
-        <div className="flex justify-between text-batman-yellow text-sm font-batman">
-          <span>PROGRESS</span>
+        <div className={`flex justify-between text-sm transition-colors duration-300 ${
+          darkMode ? 'text-neutral-400' : 'text-neutral-600'
+        }`}>
+          <span>Progress</span>
           <span>{currentIndex + 1} / {totalCards}</span>
         </div>
       </div>
@@ -68,9 +91,13 @@ const BatmanControls = ({
         <button
           onClick={handleSave}
           disabled={totalCards === 0}
-          className="bg-batman-yellow text-batman-dark px-8 py-3 rounded-lg font-batman font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-yellow-400 transition-colors duration-300 shadow-batman"
+          className={`px-6 py-2.5 rounded-lg font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 ${
+            darkMode 
+              ? 'bg-accent text-white hover:bg-accent-dark' 
+              : 'bg-accent text-white hover:bg-accent-dark'
+          }`}
         >
-          🦇 SAVE FLASHCARD SET
+          💾 Save Flashcard Set
         </button>
       </div>
     </div>

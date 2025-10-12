@@ -45,24 +45,43 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     });
     const filePath = req.file.path;
     const fileExt = path.extname(req.file.originalname).toLowerCase();
+    let extractedText = '';
+    let pageCount = 1;
 
-    if (fileExt !== '.pdf') {
+    // Handle different file types
+    if (fileExt === '.pdf') {
+      console.log('Reading PDF file:', filePath);
+      const dataBuffer = fs.readFileSync(filePath);
+      console.log('Parsing PDF...');
+      const data = await pdf(dataBuffer);
+      console.log('PDF parsed:', {
+        numpages: data.numpages,
+        textLength: data.text.length
+      });
+      extractedText = data.text;
+      pageCount = data.numpages;
+    } else if (fileExt === '.txt') {
+      console.log('Reading text file:', filePath);
+      extractedText = fs.readFileSync(filePath, 'utf-8');
+      pageCount = Math.ceil(extractedText.length / 3000);
+      console.log('Text file read:', {
+        textLength: extractedText.length,
+        estimatedPages: pageCount
+      });
+    } else if (['.mp3', '.wav', '.m4a'].includes(fileExt)) {
+      console.log('Audio file detected:', fileExt);
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ 
+        error: 'Audio transcription not yet implemented. Please use PDF or TXT files.' 
+      });
+    } else {
       console.log('Invalid file type:', fileExt);
       fs.unlinkSync(filePath);
-      return res.status(400).json({ error: 'Only PDFs are supported for processing' });
+      return res.status(400).json({ error: 'Supported formats: PDF, TXT, MP3, WAV' });
     }
 
-    console.log('Reading PDF file:', filePath);
-    const dataBuffer = fs.readFileSync(filePath);
-    console.log('Parsing PDF...');
-    const data = await pdf(dataBuffer);
-    console.log('PDF parsed:', {
-      numpages: data.numpages,
-      textLength: data.text.length
-    });
-
     const chunks = [];
-    const words = data.text.split(/\s+/);
+    const words = extractedText.split(/\s+/);
     for (let i = 0; i < words.length; i += 500) {
       chunks.push(words.slice(i, i + 500).join(' '));
     }
@@ -166,13 +185,14 @@ ${chunk}`;
     // Enhanced metadata
     const enhancedMetadata = {
       fileName: req.file.originalname,
-      pageCount: data.numpages,
+      pageCount: pageCount,
       chunkCount: chunks.length,
       flashcardCount: uniqueFlashcards.length,
-      textLength: data.text.length,
+      textLength: extractedText.length,
       keyTermsCount: extractedInfo.keyTerms.size,
       processedAt: new Date().toISOString(),
-      fileSize: req.file.size
+      fileSize: req.file.size,
+      fileType: fileExt
     };
 
     res.json({
