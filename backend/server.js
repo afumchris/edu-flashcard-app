@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const pdf = require('pdf-parse');
+const mammoth = require('mammoth');
 const { OpenAI } = require('openai');
 const cors = require('cors');
 const dotenv = require('dotenv');
@@ -60,6 +61,16 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       });
       extractedText = data.text;
       pageCount = data.numpages;
+    } else if (fileExt === '.docx') {
+      console.log('Reading Word document:', filePath);
+      const dataBuffer = fs.readFileSync(filePath);
+      const result = await mammoth.extractRawText({ buffer: dataBuffer });
+      extractedText = result.value;
+      pageCount = Math.ceil(extractedText.length / 3000);
+      console.log('Word document read:', {
+        textLength: extractedText.length,
+        estimatedPages: pageCount
+      });
     } else if (fileExt === '.txt') {
       console.log('Reading text file:', filePath);
       extractedText = fs.readFileSync(filePath, 'utf-8');
@@ -72,30 +83,32 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       console.log('Audio file detected:', fileExt);
       fs.unlinkSync(filePath);
       return res.status(400).json({ 
-        error: 'Audio transcription not yet implemented. Please use PDF or TXT files.' 
+        error: 'Audio transcription not yet implemented. Please use PDF, DOCX, or TXT files.' 
       });
     } else {
       console.log('Invalid file type:', fileExt);
       fs.unlinkSync(filePath);
-      return res.status(400).json({ error: 'Supported formats: PDF, TXT, MP3, WAV' });
+      return res.status(400).json({ error: 'Supported formats: PDF, DOCX, TXT' });
     }
 
     console.log('Processing entire document with structured prompt...');
     
     try {
       // Enhanced structured prompt for chapter-based flashcard generation
-      const structuredPrompt = `You are an expert AI Flashcard Creator specializing in educational material. Your task is to analyze the entire structured document and generate flashcards that are strictly organized by the document's main content chapters.
+      const structuredPrompt = `You are an expert AI Flashcard Creator specializing in educational material. Your task is to analyze the entire document and generate flashcards that are strictly organized by the document's actual chapters or units.
 
 Input Document/Text: 
 ${extractedText}
 
 CRITICAL INSTRUCTIONS:
 
-1. SKIP NON-CONTENT SECTIONS
-- DO NOT create flashcards for: Introduction, Preface, Table of Contents, Index, References, Bibliography, Acknowledgments, or About the Author sections
+1. CHAPTER DETECTION & SKIPPING NON-CONTENT SECTIONS
+- First, identify ALL main content chapters/units in the document by looking for chapter headings (e.g., "Chapter 1", "Unit 1", "Section 1", "1.", "Part 1", etc.)
+- DO NOT create flashcards for: Title page, Introduction, Preface, Table of Contents, Index, References, Bibliography, Acknowledgments, About the Author, or any preliminary/concluding sections
 - ONLY process main content chapters that contain substantive educational material
-- Start from the first main content chapter (e.g., Chapter 1, Unit 1, Section 1 with actual content)
-- If the document has 10 chapters of main content, create flashcards for ALL 10 chapters
+- Start from the first main content chapter and process ALL chapters through to the last main content chapter
+- If the document has 12 chapters of main content, create flashcards for ALL 12 chapters
+- Each chapter should be processed separately and have its own deck of flashcards
 
 2. IMPORTANT INFORMATION EXTRACTION
 Focus ONLY on extracting:
@@ -133,10 +146,12 @@ Answer Guidelines:
 - Keep answers concise but comprehensive (2-5 sentences typically)
 
 4. FLASHCARD QUANTITY PER CHAPTER
-- Shorter chapters (1-3 pages): 8-15 flashcards
-- Medium chapters (4-8 pages): 15-25 flashcards
-- Longer chapters (9+ pages): 25-40 flashcards
-- Ensure EVERY important concept in each chapter is covered
+- Generate as many flashcards as needed to cover ALL important concepts in each chapter
+- Shorter chapters (1-3 pages): 8-15 flashcards minimum
+- Medium chapters (4-8 pages): 15-30 flashcards minimum
+- Longer chapters (9+ pages): 30-50 flashcards minimum
+- Do not limit flashcards - if a chapter has 100 important concepts, create 100 flashcards
+- Ensure EVERY important concept, definition, process, and key fact in each chapter is covered
 
 5. REQUIRED OUTPUT FORMAT
 Return a single, valid JSON object with this exact structure:
@@ -176,7 +191,7 @@ Now, analyze the document content provided and generate flashcards ONLY for main
         model: 'gpt-3.5-turbo-16k',
         messages: [{ role: 'user', content: structuredPrompt }],
         temperature: 0.7,
-        max_tokens: 8000,
+        max_tokens: 12000,
       });
       
       console.log('OpenAI response received');
@@ -262,47 +277,24 @@ Now, analyze the document content provided and generate flashcards ONLY for main
       
     } catch (openaiError) {
       console.log('OpenAI API error:', openaiError.message);
-      console.log('Generating fallback flashcards...');
+      console.log('Generating intelligent fallback flashcards with chapter detection...');
       
-      // Fallback: Create basic flashcards from text
+      // Intelligent fallback: Detect chapters and create flashcards
+      const chapters = detectChapters(extractedText);
       const flashcards = [];
-      const sentences = extractedText.split(/[.!?]+/).filter(s => s.trim().length > 30);
-      const paragraphs = extractedText.split(/\n\s*\n/).filter(p => p.trim().length > 50);
       
-      // Create definition-style flashcards
-      for (let i = 0; i < Math.min(5, sentences.length); i++) {
-        const sentence = sentences[i].trim();
-        if (sentence && (sentence.includes(' is ') || sentence.includes(' are '))) {
-          const parts = sentence.split(/ is | are /);
-          if (parts.length >= 2) {
-            flashcards.push({
-              question: `What ${parts[0].toLowerCase()}?`,
-              answer: parts.slice(1).join(' is/are ')
-            });
-          }
-        }
-      }
-      
-      // Create concept-based flashcards
-      for (let i = 0; i < Math.min(5, paragraphs.length); i++) {
-        const paragraph = paragraphs[i].trim();
-        if (paragraph) {
-          const firstSentence = paragraph.split(/[.!?]/)[0];
-          flashcards.push({
-            question: `Explain: "${firstSentence.substring(0, 60)}..."`,
-            answer: paragraph.substring(0, 200) + (paragraph.length > 200 ? '...' : '')
-          });
-        }
-      }
-
-      // Create a single chapter for fallback
-      const chapters = [{
-        id: 1,
-        title: 'Main Content',
-        cards: flashcards.length,
-        startIndex: 0,
-        endIndex: flashcards.length - 1
-      }];
+      chapters.forEach((chapter, chapterIndex) => {
+        const chapterText = chapter.content;
+        const chapterFlashcards = generateChapterFlashcards(chapterText, chapter.title);
+        
+        chapter.startIndex = flashcards.length;
+        chapterFlashcards.forEach(card => flashcards.push(card));
+        chapter.endIndex = flashcards.length - 1;
+        chapter.cards = chapterFlashcards.length;
+        
+        // Clean up chapter object
+        delete chapter.content;
+      });
 
       fs.unlinkSync(filePath);
 
@@ -311,11 +303,12 @@ Now, analyze the document content provided and generate flashcards ONLY for main
         documentTitle: req.file.originalname,
         pageCount: pageCount,
         flashcardCount: flashcards.length,
-        chapterCount: 1,
+        chapterCount: chapters.length,
         textLength: extractedText.length,
         processedAt: new Date().toISOString(),
         fileSize: req.file.size,
-        fileType: fileExt
+        fileType: fileExt,
+        usedFallback: true
       };
 
       res.json({
@@ -332,6 +325,298 @@ Now, analyze the document content provided and generate flashcards ONLY for main
 
 // Common words to filter out from key terms
 const commonWords = ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use'];
+
+// Intelligent chapter/section detection - detects ANY type of content separation
+function detectChapters(text) {
+  const chapters = [];
+  
+  // Comprehensive patterns for ANY type of content separation
+  const separatorPatterns = [
+    // Standard chapters/units/sections with numbers
+    /(?:^|\n)(?:Chapter|CHAPTER|Ch\.|ch\.)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Unit|UNIT)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Section|SECTION|Sec\.|sec\.)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Part|PART|Pt\.|pt\.)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Module|MODULE|Mod\.|mod\.)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Lesson|LESSON)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Week|WEEK|Wk\.|wk\.)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Day|DAY)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Topic|TOPIC)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Exercise|EXERCISE|Ex\.|ex\.)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Assignment|ASSIGNMENT)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    
+    // Numbered sections (1., 2., etc.) with substantial titles
+    /(?:^|\n)(\d+)\.\s+([A-Z][^\n]{10,100})\n/g,
+    
+    // Roman numerals as separators
+    /(?:^|\n)([IVXLCDM]+)\.\s+([A-Z][^\n]{10,100})\n/g,
+    
+    // Headers with underlines (Markdown style)
+    /(?:^|\n)([^\n]{10,100})\n[=\-]{3,}\n/g,
+    
+    // Headers with # symbols (Markdown)
+    /(?:^|\n)#{1,3}\s+(.+)/g,
+    
+    // ALL CAPS headers (at least 10 chars)
+    /(?:^|\n)([A-Z][A-Z\s]{10,100})\n/g,
+    
+    // Lecture/Session patterns
+    /(?:^|\n)(?:Lecture|LECTURE|Lec\.|lec\.)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+    /(?:^|\n)(?:Session|SESSION)\s+(\d+|[IVXLCDM]+)[:\s\-–—.]*([^\n]*)/gi,
+  ];
+  
+  let matches = [];
+  
+  // Apply all patterns
+  separatorPatterns.forEach((pattern, patternIndex) => {
+    let match;
+    const regex = new RegExp(pattern);
+    while ((match = regex.exec(text)) !== null) {
+      let number = match[1] || '';
+      let title = match[2] || match[1] || '';
+      
+      // Clean up title
+      title = title.trim().replace(/[:\-–—.]+$/, '').trim();
+      
+      // If title is empty, try to extract from nearby text
+      if (!title || title.length < 3) {
+        const contextStart = match.index;
+        const contextEnd = Math.min(match.index + 200, text.length);
+        const context = text.substring(contextStart, contextEnd);
+        const lines = context.split('\n').filter(l => l.trim().length > 10);
+        if (lines.length > 1) {
+          title = lines[1].substring(0, 80).trim();
+        }
+      }
+      
+      // Determine separator type
+      let type = 'Section';
+      const matchText = match[0].toLowerCase();
+      if (matchText.includes('chapter') || matchText.includes('ch.')) type = 'Chapter';
+      else if (matchText.includes('unit')) type = 'Unit';
+      else if (matchText.includes('week') || matchText.includes('wk.')) type = 'Week';
+      else if (matchText.includes('module') || matchText.includes('mod.')) type = 'Module';
+      else if (matchText.includes('lesson')) type = 'Lesson';
+      else if (matchText.includes('lecture') || matchText.includes('lec.')) type = 'Lecture';
+      else if (matchText.includes('session')) type = 'Session';
+      else if (matchText.includes('part') || matchText.includes('pt.')) type = 'Part';
+      else if (matchText.includes('topic')) type = 'Topic';
+      else if (matchText.includes('day')) type = 'Day';
+      else if (matchText.includes('exercise') || matchText.includes('ex.')) type = 'Exercise';
+      else if (matchText.includes('assignment')) type = 'Assignment';
+      
+      matches.push({
+        index: match.index,
+        number: number,
+        title: title,
+        type: type,
+        fullMatch: match[0],
+        patternIndex: patternIndex
+      });
+    }
+  });
+  
+  // Sort by position in text
+  matches.sort((a, b) => a.index - b.index);
+  
+  // Remove duplicates (matches within 150 chars of each other)
+  const uniqueMatches = [];
+  matches.forEach((match, index) => {
+    const isDuplicate = uniqueMatches.some(existing => 
+      Math.abs(match.index - existing.index) < 150
+    );
+    if (!isDuplicate) {
+      uniqueMatches.push(match);
+    }
+  });
+  
+  // Filter out TOC/non-content sections
+  const skipKeywords = [
+    'table of contents', 'contents', 'index', 'references', 'bibliography', 
+    'preface', 'foreword', 'acknowledgment', 'acknowledgement', 'about the author',
+    'about this book', 'dedication', 'copyright', 'appendix', 'glossary'
+  ];
+  
+  const contentMatches = uniqueMatches.filter(match => {
+    const titleLower = match.title.toLowerCase();
+    const fullMatchLower = match.fullMatch.toLowerCase();
+    
+    // Skip if title contains skip keywords
+    const shouldSkip = skipKeywords.some(keyword => 
+      titleLower.includes(keyword) || fullMatchLower.includes(keyword)
+    );
+    
+    // Skip if title is too short (likely not a real section)
+    const tooShort = match.title.length < 3;
+    
+    return !shouldSkip && !tooShort;
+  });
+  
+  // Extract content for each detected section
+  if (contentMatches.length > 0) {
+    for (let i = 0; i < contentMatches.length; i++) {
+      const start = contentMatches[i].index;
+      const end = i < contentMatches.length - 1 ? contentMatches[i + 1].index : text.length;
+      const content = text.substring(start, end).trim();
+      
+      // Only include sections with substantial content (at least 300 chars)
+      if (content.length > 300) {
+        const displayNumber = contentMatches[i].number || (i + 1).toString();
+        const displayTitle = contentMatches[i].title || 'Untitled Section';
+        
+        chapters.push({
+          id: i + 1,
+          title: `${contentMatches[i].type} ${displayNumber}: ${displayTitle}`,
+          content: content,
+          type: contentMatches[i].type
+        });
+      }
+    }
+  }
+  
+  // Fallback: If no sections detected, try to split by large gaps (multiple newlines)
+  if (chapters.length === 0) {
+    const sections = text.split(/\n\s*\n\s*\n+/); // Split by 3+ newlines
+    const substantialSections = sections.filter(s => s.trim().length > 500);
+    
+    if (substantialSections.length > 1) {
+      substantialSections.forEach((section, index) => {
+        const firstLine = section.trim().split('\n')[0];
+        const title = firstLine.substring(0, 60).replace(/[^\w\s]/g, ' ').trim();
+        
+        chapters.push({
+          id: index + 1,
+          title: `Section ${index + 1}: ${title}${title.length >= 60 ? '...' : ''}`,
+          content: section.trim(),
+          type: 'Section'
+        });
+      });
+    }
+  }
+  
+  // Final fallback: Divide by content length
+  if (chapters.length === 0) {
+    const targetSections = Math.min(5, Math.ceil(text.length / 3000));
+    const chunkSize = Math.ceil(text.length / targetSections);
+    
+    for (let i = 0; i < targetSections; i++) {
+      const start = i * chunkSize;
+      const end = Math.min((i + 1) * chunkSize, text.length);
+      const content = text.substring(start, end).trim();
+      
+      if (content.length > 500) {
+        const firstPara = content.split(/\n\s*\n/)[0];
+        const topic = firstPara.substring(0, 50).replace(/\n/g, ' ').trim();
+        
+        chapters.push({
+          id: i + 1,
+          title: `Section ${i + 1}: ${topic}${topic.length >= 50 ? '...' : ''}`,
+          content: content,
+          type: 'Section'
+        });
+      }
+    }
+  }
+  
+  return chapters;
+}
+
+// Generate flashcards from chapter content
+function generateChapterFlashcards(chapterText, chapterTitle) {
+  const flashcards = [];
+  
+  // Extract sentences and paragraphs
+  const sentences = chapterText.split(/[.!?]+/).filter(s => s.trim().length > 30);
+  const paragraphs = chapterText.split(/\n\s*\n/).filter(p => p.trim().length > 100);
+  
+  // 1. Definition-based flashcards
+  sentences.forEach(sentence => {
+    const trimmed = sentence.trim();
+    if (trimmed.match(/\b(is|are|means|refers to|defined as)\b/i)) {
+      const parts = trimmed.split(/\b(?:is|are|means|refers to|defined as)\b/i);
+      if (parts.length >= 2 && parts[0].length < 100) {
+        flashcards.push({
+          question: `What ${parts[0].trim().toLowerCase()}?`,
+          answer: parts.slice(1).join(' ').trim()
+        });
+      }
+    }
+  });
+  
+  // 2. Concept explanation flashcards
+  paragraphs.slice(0, 8).forEach((para, idx) => {
+    const firstSentence = para.split(/[.!?]/)[0].trim();
+    if (firstSentence.length > 20 && firstSentence.length < 150) {
+      flashcards.push({
+        question: `Explain the concept: "${firstSentence.substring(0, 80)}${firstSentence.length > 80 ? '...' : ''}"`,
+        answer: para.substring(0, 300) + (para.length > 300 ? '...' : '')
+      });
+    }
+  });
+  
+  // 3. Key terms flashcards
+  const keyTermPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/g;
+  const keyTerms = new Set();
+  let match;
+  while ((match = keyTermPattern.exec(chapterText)) !== null) {
+    const term = match[1];
+    if (term.length > 3 && term.length < 40 && !commonWords.includes(term.toLowerCase())) {
+      keyTerms.add(term);
+    }
+  }
+  
+  Array.from(keyTerms).slice(0, 5).forEach(term => {
+    // Find context around the term
+    const termIndex = chapterText.indexOf(term);
+    if (termIndex !== -1) {
+      const contextStart = Math.max(0, termIndex - 100);
+      const contextEnd = Math.min(chapterText.length, termIndex + 200);
+      const context = chapterText.substring(contextStart, contextEnd).trim();
+      
+      flashcards.push({
+        question: `What is ${term}?`,
+        answer: context
+      });
+    }
+  });
+  
+  // 4. Process/procedure flashcards
+  paragraphs.forEach(para => {
+    if (para.match(/\b(first|second|third|then|next|finally|step)\b/i)) {
+      const firstSentence = para.split(/[.!?]/)[0].trim();
+      flashcards.push({
+        question: `Describe the process: ${firstSentence.substring(0, 60)}...`,
+        answer: para.substring(0, 350) + (para.length > 350 ? '...' : '')
+      });
+    }
+  });
+  
+  // Ensure minimum flashcards per chapter
+  if (flashcards.length < 5) {
+    sentences.slice(0, 10).forEach((sentence, idx) => {
+      if (flashcards.length < 10 && sentence.trim().length > 50) {
+        flashcards.push({
+          question: `What does the text say about: "${sentence.substring(0, 50)}..."?`,
+          answer: sentence.trim()
+        });
+      }
+    });
+  }
+  
+  // Remove duplicates and limit
+  const uniqueFlashcards = [];
+  const seen = new Set();
+  
+  flashcards.forEach(card => {
+    const key = card.question.toLowerCase().substring(0, 50);
+    if (!seen.has(key) && uniqueFlashcards.length < 25) {
+      seen.add(key);
+      uniqueFlashcards.push(card);
+    }
+  });
+  
+  return uniqueFlashcards;
+}
 
 function parseFlashcards(text) {
   const cards = [];

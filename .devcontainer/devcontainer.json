@@ -5,6 +5,7 @@
     "dockerfile": "Dockerfile"
   },
   "postCreateCommand": "cd backend && npm install && cd ../frontend && npm install",
+  "postStartCommand": "bash .devcontainer/start-servers.sh",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -15,13 +16,13 @@
       ]
     }
   },
-  "forwardPorts": [3000, 5000],
+  "forwardPorts": [3000, 5002],
   "portsAttributes": {
     "3000": {
       "label": "Frontend (React)",
-      "onAutoForward": "notify"
+      "onAutoForward": "openPreview"
     },
-    "5000": {
+    "5002": {
       "label": "Backend (API)",
       "onAutoForward": "notify"
     }
