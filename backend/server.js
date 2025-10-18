@@ -474,11 +474,14 @@ function detectChapters(text) {
     }
   });
   
-  // Filter out TOC/non-content sections
+  // Filter out TOC/non-content sections and repeated headers
   const skipKeywords = [
     'table of contents', 'contents', 'index', 'references', 'bibliography', 
     'preface', 'foreword', 'acknowledgment', 'acknowledgement', 'about the author',
-    'about this book', 'dedication', 'copyright', 'appendix', 'glossary'
+    'about this book', 'dedication', 'copyright', 'appendix', 'glossary',
+    'national open university', 'school of arts', 'school of science',
+    'course guide', 'course code', 'course material', 'study unit',
+    'self assessment', 'tutor marked', 'assignment question'
   ];
   
   const contentMatches = uniqueMatches.filter(match => {
@@ -493,7 +496,14 @@ function detectChapters(text) {
     // Skip if title is too short (likely not a real section)
     const tooShort = match.title.length < 3;
     
-    return !shouldSkip && !tooShort;
+    // Skip if title is ALL CAPS and very long (likely a header)
+    const isHeader = match.title === match.title.toUpperCase() && match.title.length > 30;
+    
+    // Skip if title repeats common institutional phrases
+    const isInstitutionalHeader = /university|school|department|faculty|college/i.test(titleLower) &&
+                                  titleLower.length > 40;
+    
+    return !shouldSkip && !tooShort && !isHeader && !isInstitutionalHeader;
   });
   
   // Extract content for each detected section
@@ -595,9 +605,9 @@ function generateChapterFlashcards(chapterText, chapterTitle) {
     return blacklistPatterns.some(pattern => pattern.test(text));
   };
   
-  // PATTERN 1: Explicit definitions with "is/are" at sentence start
-  // Example: "Photosynthesis is the process..."
-  const sentences = chapterText.split(/[.!?]+/).filter(s => s.trim().length > 40);
+  // PATTERN 1: Explicit definitions with "is/are" 
+  // Example: "Photosynthesis is the process..." or "An editorial is a written article..."
+  const sentences = chapterText.split(/[.!?]+/).filter(s => s.trim().length > 30);
   
   sentences.forEach(sentence => {
     const trimmed = sentence.trim();
@@ -605,39 +615,63 @@ function generateChapterFlashcards(chapterText, chapterTitle) {
     // Skip if contains blacklisted content
     if (hasBlacklistedContent(trimmed)) return;
     
-    // Must match: "Term is/are [definition]"
-    const match = trimmed.match(/^([A-Z][a-zA-Z\s]{3,40}?)\s+(is|are)\s+(a|an|the)?\s*(.{30,250})$/i);
+    // Match patterns: "Term is/are [definition]" or "An/A/The Term is/are [definition]"
+    const patterns = [
+      /^([A-Z][a-zA-Z\s]{2,50}?)\s+(is|are)\s+(a|an|the)?\s*(.{20,300})$/i,
+      /^(An?|The)\s+([A-Z][a-zA-Z\s]{2,50}?)\s+(is|are)\s+(.{20,300})$/i
+    ];
     
-    if (match) {
-      const term = match[1].trim();
-      const definition = match[4].trim();
+    for (const pattern of patterns) {
+      const match = trimmed.match(pattern);
       
-      // Validation checks
-      const wordCount = term.split(/\s+/).length;
-      const isValidLength = wordCount >= 1 && wordCount <= 4;
-      const noCommas = !term.includes(',');
-      const noConjunctions = !term.includes(' and ') && !term.includes(' or ');
-      const notQuestion = !term.includes('?');
-      const notMetadata = !hasBlacklistedContent(term);
-      const hasSubstantiveDefinition = definition.length > 30 && definition.length < 250;
-      
-      // Must not be procedural
-      const notProcedural = !/\b(first|then|next|finally|step|follow|click|submit)\b/i.test(definition);
-      
-      // Must not be an example
-      const notExample = !/\b(for example|for instance|such as|e\.g\.|like)\b/i.test(definition);
-      
-      // Must not be administrative
-      const notAdmin = !/\b(due|submit|upload|download|register|enroll)\b/i.test(definition);
-      
-      if (isValidLength && noCommas && noConjunctions && notQuestion && 
-          notMetadata && hasSubstantiveDefinition && notProcedural && 
-          notExample && notAdmin) {
+      if (match) {
+        let term, definition;
         
-        flashcards.push({
-          question: `What is ${term}?`,
-          answer: definition.replace(/^(a|an|the)\s+/i, '').trim()
-        });
+        if (match[1] && (match[1].toLowerCase() === 'a' || match[1].toLowerCase() === 'an' || match[1].toLowerCase() === 'the')) {
+          // Pattern: "An editorial is..."
+          term = match[2].trim();
+          definition = match[4].trim();
+        } else {
+          // Pattern: "Editorial is..."
+          term = match[1].trim();
+          definition = match[4].trim();
+        }
+        
+        // Validation checks
+        const wordCount = term.split(/\s+/).length;
+        const isValidLength = wordCount >= 1 && wordCount <= 6;
+        const noCommas = !term.includes(',');
+        const notQuestion = !term.includes('?');
+        const notMetadata = !hasBlacklistedContent(term);
+        const hasSubstantiveDefinition = definition.length > 20 && definition.length < 300;
+        
+        // Must not be a pronoun or common word
+        const pronouns = ['it', 'they', 'this', 'that', 'these', 'those', 'he', 'she', 'we', 'you'];
+        const notPronoun = !pronouns.includes(term.toLowerCase());
+        
+        // Must be a proper term (not just articles)
+        const articles = ['a', 'an', 'the'];
+        const notArticle = !articles.includes(term.toLowerCase());
+        
+        // Must not be procedural
+        const notProcedural = !/\b(first|then|next|finally|step|follow|click|submit|upload)\b/i.test(definition);
+        
+        // Must not be an example
+        const notExample = !/\b(for example|for instance|such as|e\.g\.)\b/i.test(definition);
+        
+        // Must not be administrative
+        const notAdmin = !/\b(due|submit|upload|download|register|enroll|assignment)\b/i.test(definition);
+        
+        if (isValidLength && noCommas && notQuestion && notMetadata && 
+            hasSubstantiveDefinition && notProcedural && notExample && notAdmin &&
+            notPronoun && notArticle) {
+          
+          flashcards.push({
+            question: `What is ${term}?`,
+            answer: definition.replace(/^(a|an|the)\s+/i, '').trim()
+          });
+          break; // Found a match, no need to try other patterns
+        }
       }
     }
   });
