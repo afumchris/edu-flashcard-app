@@ -110,23 +110,29 @@ CRITICAL INSTRUCTIONS:
 - If the document has 12 chapters of main content, create flashcards for ALL 12 chapters
 - Each chapter should be processed separately and have its own deck of flashcards
 
-2. IMPORTANT INFORMATION EXTRACTION
-Focus ONLY on extracting:
-- Key concepts and theories that are central to understanding the topic
-- Critical definitions and terminology
-- Important processes, procedures, and methodologies
-- Significant facts, figures, and data points
-- Essential principles and laws
-- Major historical events or milestones (if relevant)
-- Important names and their contributions
-- Core formulas and equations (if applicable)
+2. CRITICAL: EXTRACT ONLY DEFINITIONS AND KEY CONCEPTS
+Focus EXCLUSIVELY on:
+- **Definitions**: Terms that are explicitly defined (e.g., "X is...", "X refers to...", "X means...")
+- **Key Concepts**: Core ideas that are fundamental to understanding the topic
+- **Terminology**: Important technical terms with their meanings
 
 DO NOT extract:
-- Trivial details or examples
+- Examples or illustrations
+- Explanatory paragraphs that don't define something
+- Procedural steps or how-to instructions
+- Historical context or background stories
+- Author opinions or commentary
+- Transitional or filler text
+- Supporting details or elaborations
+- Case studies or scenarios
+- Minor facts or figures
 - Redundant information
-- Filler content or transitional text
-- Author's personal anecdotes unless they illustrate a key concept
-- Minor supporting details
+
+QUALITY OVER QUANTITY:
+- Only create flashcards for information that a student MUST memorize
+- Each flashcard should test recall of a specific definition or key concept
+- Avoid creating flashcards for general explanations
+- Skip content that is explanatory but not definitional
 
 3. FLASHCARD STRUCTURE
 Card Format: Each flashcard must have:
@@ -145,13 +151,13 @@ Answer Guidelines:
 - Explain the "why" and "how", not just the "what"
 - Keep answers concise but comprehensive (2-5 sentences typically)
 
-4. FLASHCARD QUANTITY PER CHAPTER
-- Generate as many flashcards as needed to cover ALL important concepts in each chapter
-- Shorter chapters (1-3 pages): 8-15 flashcards minimum
-- Medium chapters (4-8 pages): 15-30 flashcards minimum
-- Longer chapters (9+ pages): 30-50 flashcards minimum
-- Do not limit flashcards - if a chapter has 100 important concepts, create 100 flashcards
-- Ensure EVERY important concept, definition, process, and key fact in each chapter is covered
+4. FLASHCARD QUANTITY PER CHAPTER (QUALITY OVER QUANTITY)
+- Only create flashcards for definitions and key concepts that require memorization
+- Shorter chapters (1-3 pages): 5-10 flashcards (only essential definitions/concepts)
+- Medium chapters (4-8 pages): 10-15 flashcards (only essential definitions/concepts)
+- Longer chapters (9+ pages): 15-25 flashcards (only essential definitions/concepts)
+- Better to have fewer high-quality flashcards than many low-quality ones
+- Each flashcard must test a specific, memorizable definition or concept
 
 5. REQUIRED OUTPUT FORMAT
 Return a single, valid JSON object with this exact structure:
@@ -172,16 +178,28 @@ Return a single, valid JSON object with this exact structure:
   ]
 }
 
-EXAMPLE OF GOOD FLASHCARD:
+EXAMPLE OF GOOD FLASHCARD (Definition):
 {
-  "Question": "What is machine learning and how does it differ from traditional programming?",
-  "Answer": "Machine learning is a subset of AI that enables computers to learn from data without being explicitly programmed. Unlike traditional programming where developers write specific rules, machine learning algorithms identify patterns in data and make decisions based on those patterns. The system improves its performance as it processes more data."
+  "Question": "What is machine learning?",
+  "Answer": "Machine learning is a subset of artificial intelligence that enables computers to learn from data and improve their performance without being explicitly programmed. It uses algorithms to identify patterns in data and make predictions or decisions based on those patterns."
 }
 
-EXAMPLE OF BAD FLASHCARD (too simple):
+EXAMPLE OF GOOD FLASHCARD (Key Concept):
 {
-  "Question": "What is ML?",
-  "Answer": "Machine Learning"
+  "Question": "What is encapsulation in object-oriented programming?",
+  "Answer": "Encapsulation is the bundling of data and methods that operate on that data within a single unit or class. It restricts direct access to some of an object's components and prevents external interference and misuse of data."
+}
+
+EXAMPLE OF BAD FLASHCARD (too vague/explanatory):
+{
+  "Question": "How does the system work?",
+  "Answer": "The system processes data through multiple stages and produces output."
+}
+
+EXAMPLE OF BAD FLASHCARD (procedural, not definitional):
+{
+  "Question": "What are the steps to implement a feature?",
+  "Answer": "First, analyze requirements. Then, design the solution. Finally, implement and test."
 }
 
 Now, analyze the document content provided and generate flashcards ONLY for main content chapters, extracting ONLY important information. Return ONLY the JSON object, no additional text.`;
@@ -521,101 +539,145 @@ function detectChapters(text) {
   return chapters;
 }
 
-// Generate flashcards from chapter content
+// Generate flashcards from chapter content - ONLY definitions and key concepts
 function generateChapterFlashcards(chapterText, chapterTitle) {
   const flashcards = [];
   
-  // Extract sentences and paragraphs
+  // Extract sentences
   const sentences = chapterText.split(/[.!?]+/).filter(s => s.trim().length > 30);
-  const paragraphs = chapterText.split(/\n\s*\n/).filter(p => p.trim().length > 100);
   
-  // 1. Definition-based flashcards
+  // 1. STRICT Definition-based flashcards (highest priority)
+  // Look for explicit definition patterns at sentence start
+  const definitionPatterns = [
+    /(?:^|\.\s+)([A-Z][a-zA-Z\s]{3,50}?)\s+(?:is|are)\s+(?:a|an|the)?\s*([^.!?]{20,250})[.!?]/gm,
+    /(?:^|\.\s+)([A-Z][a-zA-Z\s]{3,50}?)\s+(?:refers to|means|is defined as|can be defined as)\s+([^.!?]{20,250})[.!?]/gm,
+    /(?:^|\.\s+)The term\s+([A-Z][a-zA-Z\s]{3,50}?)\s+(?:means|refers to|is defined as)\s+([^.!?]{20,250})[.!?]/gm
+  ];
+  
+  definitionPatterns.forEach(pattern => {
+    let match;
+    const regex = new RegExp(pattern);
+    while ((match = regex.exec(chapterText)) !== null) {
+      const term = match[1]?.trim();
+      const definition = match[2]?.trim();
+      
+      if (term && definition && term.length > 3 && term.length < 60 && definition.length > 20) {
+        // Validate term doesn't contain sentence fragments
+        const hasProperNoun = /^[A-Z]/.test(term);
+        const notTooManyWords = term.split(/\s+/).length <= 6;
+        const notSentenceFragment = !term.includes(',') && !term.includes('and');
+        
+        if (hasProperNoun && notTooManyWords && notSentenceFragment) {
+          flashcards.push({
+            question: `What is ${term}?`,
+            answer: definition.replace(/^(a|an|the)\s+/i, '').trim(),
+            type: 'definition'
+          });
+        }
+      }
+    }
+  });
+  
+  // 2. Key concept identification (only clear, standalone definitions)
+  // Look for sentences that start with a term and define it
   sentences.forEach(sentence => {
     const trimmed = sentence.trim();
-    if (trimmed.match(/\b(is|are|means|refers to|defined as)\b/i)) {
-      const parts = trimmed.split(/\b(?:is|are|means|refers to|defined as)\b/i);
-      if (parts.length >= 2 && parts[0].length < 100) {
-        flashcards.push({
-          question: `What ${parts[0].trim().toLowerCase()}?`,
-          answer: parts.slice(1).join(' ').trim()
-        });
-      }
-    }
-  });
-  
-  // 2. Concept explanation flashcards
-  paragraphs.slice(0, 8).forEach((para, idx) => {
-    const firstSentence = para.split(/[.!?]/)[0].trim();
-    if (firstSentence.length > 20 && firstSentence.length < 150) {
-      flashcards.push({
-        question: `Explain the concept: "${firstSentence.substring(0, 80)}${firstSentence.length > 80 ? '...' : ''}"`,
-        answer: para.substring(0, 300) + (para.length > 300 ? '...' : '')
-      });
-    }
-  });
-  
-  // 3. Key terms flashcards
-  const keyTermPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/g;
-  const keyTerms = new Set();
-  let match;
-  while ((match = keyTermPattern.exec(chapterText)) !== null) {
-    const term = match[1];
-    if (term.length > 3 && term.length < 40 && !commonWords.includes(term.toLowerCase())) {
-      keyTerms.add(term);
-    }
-  }
-  
-  Array.from(keyTerms).slice(0, 5).forEach(term => {
-    // Find context around the term
-    const termIndex = chapterText.indexOf(term);
-    if (termIndex !== -1) {
-      const contextStart = Math.max(0, termIndex - 100);
-      const contextEnd = Math.min(chapterText.length, termIndex + 200);
-      const context = chapterText.substring(contextStart, contextEnd).trim();
+    
+    // Must start with a capitalized term (not mid-sentence)
+    const startsWithTerm = /^([A-Z][a-zA-Z\s]{2,50}?)\s+(is|are|means|refers to)\s+/i.test(trimmed);
+    
+    // Must be reasonable length
+    const isReasonableLength = trimmed.length > 50 && trimmed.length < 300;
+    
+    // Must not contain procedural/explanatory words
+    const notProcedural = !/\b(first|second|then|next|finally|step|however|therefore|thus|hence)\b/i.test(trimmed);
+    
+    // Must not be an example or elaboration
+    const notExample = !/\b(for example|for instance|such as|e\.g\.|i\.e\.|this means|in other words)\b/i.test(trimmed);
+    
+    // Must not have multiple clauses (keep it simple)
+    const notComplex = (trimmed.match(/,/g) || []).length <= 2;
+    
+    if (startsWithTerm && isReasonableLength && notProcedural && notExample && notComplex) {
+      const match = trimmed.match(/^([A-Z][a-zA-Z\s]{2,50}?)\s+(is|are|means|refers to)\s+(.+)/i);
       
-      flashcards.push({
-        question: `What is ${term}?`,
-        answer: context
-      });
-    }
-  });
-  
-  // 4. Process/procedure flashcards
-  paragraphs.forEach(para => {
-    if (para.match(/\b(first|second|third|then|next|finally|step)\b/i)) {
-      const firstSentence = para.split(/[.!?]/)[0].trim();
-      flashcards.push({
-        question: `Describe the process: ${firstSentence.substring(0, 60)}...`,
-        answer: para.substring(0, 350) + (para.length > 350 ? '...' : '')
-      });
-    }
-  });
-  
-  // Ensure minimum flashcards per chapter
-  if (flashcards.length < 5) {
-    sentences.slice(0, 10).forEach((sentence, idx) => {
-      if (flashcards.length < 10 && sentence.trim().length > 50) {
-        flashcards.push({
-          question: `What does the text say about: "${sentence.substring(0, 50)}..."?`,
-          answer: sentence.trim()
-        });
+      if (match) {
+        const term = match[1].trim();
+        const definition = match[3].trim();
+        
+        // Validate term is a single concept (not a phrase)
+        const wordCount = term.split(/\s+/).length;
+        const isValidTerm = wordCount >= 1 && wordCount <= 5;
+        const notSentenceFragment = !term.includes(',') && !term.includes('and') && !term.includes('or');
+        
+        if (isValidTerm && notSentenceFragment && definition.length > 20) {
+          flashcards.push({
+            question: `What is ${term}?`,
+            answer: definition.replace(/^(a|an|the)\s+/i, '').trim(),
+            type: 'concept'
+          });
+        }
       }
-    });
-  }
+    }
+  });
   
-  // Remove duplicates and limit
+  // 3. Extract only terms that are explicitly defined in parentheses or with colons
+  // Pattern: "Term (definition)" or "Term: definition"
+  const explicitDefinitions = [
+    /([A-Z][a-zA-Z\s]{2,40})\s*\(([^)]{20,200})\)/g,
+    /^([A-Z][a-zA-Z\s]{2,40}):\s+([^.!?]{20,250})[.!?]/gm
+  ];
+  
+  explicitDefinitions.forEach(pattern => {
+    let match;
+    const regex = new RegExp(pattern);
+    while ((match = regex.exec(chapterText)) !== null) {
+      const term = match[1]?.trim();
+      const definition = match[2]?.trim();
+      
+      if (term && definition && term.length > 3 && definition.length > 20) {
+        const wordCount = term.split(/\s+/).length;
+        const isValidTerm = wordCount >= 1 && wordCount <= 5;
+        const notCommonWord = !commonWords.includes(term.toLowerCase());
+        
+        if (isValidTerm && notCommonWord) {
+          flashcards.push({
+            question: `What is ${term}?`,
+            answer: definition,
+            type: 'term'
+          });
+        }
+      }
+    }
+  });
+  
+  // Remove duplicates and limit to quality flashcards
   const uniqueFlashcards = [];
   const seen = new Set();
   
   flashcards.forEach(card => {
-    const key = card.question.toLowerCase().substring(0, 50);
-    if (!seen.has(key) && uniqueFlashcards.length < 25) {
+    // Create a key from the question to detect duplicates
+    const key = card.question.toLowerCase().replace(/[^a-z0-9]/g, '');
+    
+    // Only add if not duplicate and answer is substantial
+    if (!seen.has(key) && card.answer.length > 15 && card.answer.length < 400) {
       seen.add(key);
+      
+      // Clean up the answer
+      card.answer = card.answer
+        .replace(/^(is|are|means|refers to|defined as)\s+/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      // Remove type field before adding
+      delete card.type;
+      
       uniqueFlashcards.push(card);
     }
   });
   
-  return uniqueFlashcards;
+  // Limit to reasonable number (quality over quantity)
+  return uniqueFlashcards.slice(0, 15);
 }
 
 function parseFlashcards(text) {
