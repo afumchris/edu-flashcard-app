@@ -7,6 +7,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 dotenv.config();
 
@@ -51,16 +52,42 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 
     // Handle different file types
     if (fileExt === '.pdf') {
-      console.log('Reading PDF file:', filePath);
-      const dataBuffer = fs.readFileSync(filePath);
-      console.log('Parsing PDF...');
-      const data = await pdf(dataBuffer);
-      console.log('PDF parsed:', {
-        numpages: data.numpages,
-        textLength: data.text.length
-      });
-      extractedText = data.text;
-      pageCount = data.numpages;
+      console.log('Reading PDF file with PyMuPDF4LLM:', filePath);
+      
+      try {
+        // Use PyMuPDF4LLM for better text extraction
+        const pythonScript = path.join(__dirname, 'extract_pdf.py');
+        const result = execSync(`python3 ${pythonScript} ${filePath}`, {
+          encoding: 'utf-8',
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer
+        });
+        
+        const extraction = JSON.parse(result);
+        
+        if (extraction.success) {
+          extractedText = extraction.text;
+          console.log('PDF extracted with PyMuPDF4LLM:', {
+            textLength: extraction.length
+          });
+          
+          // Estimate page count from text length
+          pageCount = Math.ceil(extraction.length / 3000);
+        } else {
+          throw new Error(extraction.error);
+        }
+      } catch (pymupdfError) {
+        console.log('PyMuPDF4LLM failed, falling back to pdf-parse:', pymupdfError.message);
+        
+        // Fallback to pdf-parse
+        const dataBuffer = fs.readFileSync(filePath);
+        const data = await pdf(dataBuffer);
+        console.log('PDF parsed with pdf-parse:', {
+          numpages: data.numpages,
+          textLength: data.text.length
+        });
+        extractedText = data.text;
+        pageCount = data.numpages;
+      }
     } else if (fileExt === '.docx') {
       console.log('Reading Word document:', filePath);
       const dataBuffer = fs.readFileSync(filePath);
