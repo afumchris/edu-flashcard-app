@@ -9,6 +9,21 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// Import new modules for improved flashcard generation
+const {
+  cleanText,
+  detectChaptersEnhanced,
+  extractDefinitionsImproved,
+  scoreFlashcard
+} = require('./textPreprocessor');
+
+const {
+  buildMessages,
+  getOptimalConfig,
+  chunkText,
+  mergeChunkedResults
+} = require('./promptEngine');
+
 dotenv.config();
 
 const app = express();
@@ -118,179 +133,53 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Supported formats: PDF, DOCX, TXT' });
     }
 
-    console.log('Processing entire document with structured prompt...');
+    console.log('Processing document with improved AI pipeline...');
     
     try {
-      // STRICT prompt for extracting ONLY valuable definitions and key concepts
-      const structuredPrompt = `You are an expert educational flashcard creator. Your ONLY job is to extract definitions and key concepts that students need to memorize.
-
-INPUT TEXT:
-${extractedText}
-
-═══════════════════════════════════════════════════════════════
-CRITICAL RULES - FOLLOW EXACTLY:
-═══════════════════════════════════════════════════════════════
-
-RULE 1: SKIP ALL NON-CONTENT
-Ignore completely:
-- Course codes, course names, instructor names
-- Table of contents, page numbers, headers, footers
-- References, bibliography, citations
-- "Introduction", "Preface", "About this course"
-- Administrative information (dates, locations, requirements)
-- Assignment instructions, grading rubrics
-- Any metadata or document structure information
-
-RULE 2: EXTRACT ONLY THESE TWO THINGS
-✓ DEFINITIONS: A term with its meaning
-   Example: "Photosynthesis is the process by which plants convert light energy into chemical energy"
-   
-✓ KEY CONCEPTS: A fundamental idea explained
-   Example: "The water cycle describes how water moves between Earth's surface and atmosphere"
-
-RULE 3: WHAT TO NEVER EXTRACT
-✗ Examples or case studies
-✗ Historical background or stories
-✗ Step-by-step procedures or instructions
-✗ Author opinions or commentary
-✗ Explanatory paragraphs without definitions
-✗ Supporting details or elaborations
-✗ Questions from the document
-✗ Metadata (course info, dates, etc.)
-✗ Anything that isn't a definition or core concept
-
-RULE 4: VALIDATION CHECKLIST
-Before creating a flashcard, ask:
-1. Is this a definition or key concept? (If no → SKIP)
-2. Would a student need to memorize this? (If no → SKIP)
-3. Is this substantive educational content? (If no → SKIP)
-4. Is the term/concept meaningful? (If no → SKIP)
-
-RULE 5: QUALITY STANDARDS
-- Each flashcard must be valuable for learning
-- No trivial or obvious information
-- No administrative or metadata content
-- Clear, concise definitions only
-- 5-12 flashcards per chapter maximum
-
-═══════════════════════════════════════════════════════════════
-FLASHCARD FORMAT:
-═══════════════════════════════════════════════════════════════
-
-Question Format:
-- "What is [TERM]?"
-- "Define [TERM]"
-- "What does [TERM] mean?"
-
-Answer Format:
-- Start with the definition
-- 1-3 sentences maximum
-- Clear and concise
-- No fluff or filler
-
-═══════════════════════════════════════════════════════════════
-EXAMPLES OF GOOD FLASHCARDS:
-═══════════════════════════════════════════════════════════════
-
-✓ GOOD:
-Q: "What is an algorithm?"
-A: "An algorithm is a step-by-step procedure for solving a problem or completing a task. It consists of a finite sequence of well-defined instructions."
-
-✓ GOOD:
-Q: "What is encapsulation?"
-A: "Encapsulation is the bundling of data and methods within a single unit or class, restricting direct access to some components to prevent external interference."
-
-═══════════════════════════════════════════════════════════════
-EXAMPLES OF BAD FLASHCARDS (NEVER CREATE THESE):
-═══════════════════════════════════════════════════════════════
-
-✗ BAD (Metadata):
-Q: "What is the course code?"
-A: "JLS825"
-
-✗ BAD (Administrative):
-Q: "When is the assignment due?"
-A: "Next Friday"
-
-✗ BAD (Procedural):
-Q: "How do you submit homework?"
-A: "Upload to the portal"
-
-✗ BAD (Too vague):
-Q: "What is this about?"
-A: "It's about writing"
-
-✗ BAD (Example, not definition):
-Q: "What is an example of X?"
-A: "Here's an example..."
-
-═══════════════════════════════════════════════════════════════
-YOUR TASK:
-═══════════════════════════════════════════════════════════════
-
-1. Identify main content chapters (skip TOC, intro, references)
-2. For each chapter, extract ONLY definitions and key concepts
-3. Create 5-12 high-quality flashcards per chapter
-4. Validate each flashcard against the rules above
-
-═══════════════════════════════════════════════════════════════
-OUTPUT FORMAT (JSON ONLY):
-═══════════════════════════════════════════════════════════════
-
-{
-  "document_title": "Main topic of document",
-  "flashcard_decks": [
-    {
-      "chapter_title": "Chapter 1: [Title]",
-      "card_count": 8,
-      "cards": [
-        {
-          "Question": "What is [term]?",
-          "Answer": "Clear, concise definition in 1-3 sentences."
-        }
-      ]
-    }
-  ]
-}
-
-IMPORTANT: Return ONLY the JSON object. No additional text, explanations, or comments.
-
-Now analyze the document and extract ONLY valuable definitions and key concepts. Be extremely selective.`;
-
-      console.log('Sending structured prompt to OpenAI...');
-      const response = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo-16k',
-        messages: [{ role: 'user', content: structuredPrompt }],
-        temperature: 0.7,
-        max_tokens: 12000,
-      });
+      // Step 1: Clean and preprocess text
+      console.log('Step 1: Preprocessing text...');
+      const cleanedText = cleanText(extractedText);
+      console.log(`Text cleaned: ${cleanedText.length} characters`);
       
-      console.log('OpenAI response received');
-      const responseText = response.choices[0].message.content.trim();
-      console.log('Response preview:', responseText.substring(0, 200));
+      // Step 2: Check if text needs chunking
+      const chunks = chunkText(cleanedText, 8000);
+      console.log(`Step 2: Text split into ${chunks.length} chunk(s)`);
       
-      // Parse the JSON response
-      let structuredData;
-      try {
-        // Remove markdown code blocks if present
-        const cleanedResponse = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        structuredData = JSON.parse(cleanedResponse);
-      } catch (parseError) {
-        console.error('JSON parse error:', parseError.message);
-        console.log('Attempting fallback parsing...');
+      // Step 3: Process with optimized OpenAI configuration
+      console.log('Step 3: Sending to OpenAI with optimized prompt...');
+      const config = getOptimalConfig();
+      const chunkResults = [];
+      
+      for (let i = 0; i < chunks.length; i++) {
+        console.log(`Processing chunk ${i + 1}/${chunks.length}...`);
+        const messages = buildMessages(chunks[i], req.file.originalname);
         
-        // Fallback: try to extract JSON from the response
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          structuredData = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error('Could not parse JSON response from OpenAI');
+        const response = await openai.chat.completions.create({
+          ...config,
+          messages: messages
+        });
+        
+        const responseText = response.choices[0].message.content.trim();
+        console.log(`Chunk ${i + 1} response received (${responseText.length} chars)`);
+        
+        try {
+          const parsed = JSON.parse(responseText);
+          chunkResults.push(parsed);
+        } catch (parseError) {
+          console.error(`Failed to parse chunk ${i + 1}:`, parseError.message);
         }
       }
       
-      console.log('Structured data parsed successfully');
-      console.log('Document title:', structuredData.document_title);
-      console.log('Number of chapters:', structuredData.flashcard_decks?.length);
+      // Step 4: Merge results if multiple chunks
+      let structuredData;
+      if (chunkResults.length > 1) {
+        console.log('Step 4: Merging chunked results...');
+        structuredData = mergeChunkedResults(chunkResults);
+      } else {
+        structuredData = chunkResults[0];
+      }
+      
+      console.log('Step 5: Parsing and validating results...');
       
       // Flatten flashcards for backward compatibility
       const flashcards = [];
@@ -350,15 +239,36 @@ Now analyze the document and extract ONLY valuable definitions and key concepts.
       
     } catch (openaiError) {
       console.log('OpenAI API error:', openaiError.message);
-      console.log('Generating intelligent fallback flashcards with chapter detection...');
+      console.log('Using improved fallback with enhanced pattern matching...');
       
-      // Intelligent fallback: Detect chapters and create flashcards
-      const chapters = detectChapters(extractedText);
+      // Improved fallback: Use enhanced detection and extraction
+      const cleanedText = cleanText(extractedText);
+      const chapters = detectChaptersEnhanced(cleanedText);
       const flashcards = [];
+      
+      console.log(`Detected ${chapters.length} chapters for fallback processing`);
       
       chapters.forEach((chapter, chapterIndex) => {
         const chapterText = chapter.content;
-        const chapterFlashcards = generateChapterFlashcards(chapterText, chapter.title);
+        
+        // Use improved definition extraction
+        const definitions = extractDefinitionsImproved(chapterText);
+        console.log(`Chapter ${chapter.id}: Found ${definitions.length} definitions`);
+        
+        // Convert to flashcards with quality scoring
+        const chapterFlashcards = definitions
+          .map(def => ({
+            question: `What is ${def.term}?`,
+            answer: def.definition,
+            score: scoreFlashcard(def.term, def.definition)
+          }))
+          .filter(card => card.score >= 60)  // Only keep quality flashcards
+          .sort((a, b) => b.score - a.score)  // Best first
+          .slice(0, 15)  // Max 15 per chapter
+          .map(card => ({
+            question: card.question,
+            answer: card.answer
+          }));
         
         chapter.startIndex = flashcards.length;
         chapterFlashcards.forEach(card => flashcards.push(card));
@@ -366,8 +276,12 @@ Now analyze the document and extract ONLY valuable definitions and key concepts.
         chapter.endIndex = chapterFlashcards.length > 0 ? flashcards.length - 1 : chapter.startIndex - 1;
         chapter.cards = chapterFlashcards.length;
         
+        console.log(`Chapter ${chapter.id}: Generated ${chapterFlashcards.length} quality flashcards`);
+        
         // Clean up chapter object
         delete chapter.content;
+        delete chapter.startPos;
+        delete chapter.endPos;
       });
 
       fs.unlinkSync(filePath);
