@@ -108,7 +108,14 @@ function App() {
   };
 
   const updateCurrentChapter = (index) => {
-    const chapter = chapters.find(ch => index >= ch.startIndex && index <= ch.endIndex);
+    // Fix: Handle empty chapters (where endIndex < startIndex)
+    const chapter = chapters.find(ch => {
+      if (ch.cards === 0) {
+        // Empty chapter: check if index would be in this chapter's position
+        return false;
+      }
+      return index >= ch.startIndex && index <= ch.endIndex;
+    });
     if (chapter) {
       setCurrentChapter(chapter);
     }
@@ -159,6 +166,8 @@ function App() {
 
   const getCurrentChapterProgress = () => {
     if (!currentChapter) return 0;
+    // Fix: Handle empty chapters to prevent division by zero
+    if (currentChapter.cards === 0) return 0;
     const chapterCards = currentChapter.endIndex - currentChapter.startIndex + 1;
     const currentCardInChapter = currentIndex - currentChapter.startIndex + 1;
     return (currentCardInChapter / chapterCards) * 100;
@@ -311,19 +320,25 @@ function App() {
               
               <div className="space-y-2">
                 {chapters.map(chapter => {
-                  const isActive = currentIndex >= chapter.startIndex && currentIndex <= chapter.endIndex;
+                  // Fix: Handle empty chapters in active state calculation
+                  const isActive = chapter.cards > 0 && currentIndex >= chapter.startIndex && currentIndex <= chapter.endIndex;
+                  const isEmpty = chapter.cards === 0;
                   return (
                     <div 
                       key={chapter.id}
-                      onClick={() => handleChapterClick(chapter)}
-                      className={`rounded-xl p-4 cursor-pointer transition-all shadow-sm ${
-                        isActive
-                          ? darkMode 
-                            ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg scale-105' 
-                            : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg scale-105'
-                          : darkMode 
-                            ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700' 
-                            : 'bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-200'
+                      onClick={() => !isEmpty && handleChapterClick(chapter)}
+                      className={`rounded-xl p-4 transition-all shadow-sm ${
+                        isEmpty 
+                          ? darkMode
+                            ? 'bg-neutral-800/50 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
+                            : 'bg-neutral-100 text-neutral-400 border border-neutral-200 cursor-not-allowed opacity-50'
+                          : isActive
+                            ? darkMode 
+                              ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg scale-105 cursor-pointer' 
+                              : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg scale-105 cursor-pointer'
+                            : darkMode 
+                              ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 cursor-pointer' 
+                              : 'bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-200 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-start justify-between mb-2">
