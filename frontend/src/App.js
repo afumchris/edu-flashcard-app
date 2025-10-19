@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
+import { API_BASE_URL } from './config/api';
 import BatmanFlashcard from './components/BatmanFlashcard';
 import BatmanControls from './components/BatmanControls';
 
@@ -17,6 +18,25 @@ function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [chapters, setChapters] = useState([]);
   const [currentChapter, setCurrentChapter] = useState(null);
+  const [backendStatus, setBackendStatus] = useState('checking');
+
+  // Check backend connectivity on mount
+  React.useEffect(() => {
+    const checkBackend = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/`, { timeout: 5000 });
+        if (response.data.status) {
+          setBackendStatus('connected');
+          console.log('✅ Backend connected:', response.data);
+        }
+      } catch (err) {
+        setBackendStatus('disconnected');
+        console.error('❌ Backend connection failed:', err.message);
+        setError(`Cannot connect to backend at ${API_BASE_URL}. Please ensure the backend server is running.`);
+      }
+    };
+    checkBackend();
+  }, []);
 
   const onDrop = async (acceptedFiles) => {
     setFile(acceptedFiles[0]);
@@ -32,7 +52,7 @@ function App() {
     console.log('Uploading file:', acceptedFiles[0].name, 'size:', acceptedFiles[0].size);
 
     try {
-      const response = await axios.post('/upload', formData, {
+      const response = await axios.post(`${API_BASE_URL}/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 180000,
       });
@@ -72,7 +92,20 @@ function App() {
       }
     } catch (err) {
       console.error('Upload error:', err.message, err.response?.data, err.response?.status);
-      setError(err.response?.data?.error || 'Upload failed: ' + err.message);
+      
+      // Provide more helpful error messages
+      let errorMessage = 'Upload failed: ';
+      if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+        errorMessage += 'Request timeout. The document may be too large or the server is slow.';
+      } else if (err.code === 'ERR_NETWORK' || err.message.includes('Network Error')) {
+        errorMessage += `Cannot connect to backend at ${API_BASE_URL}. Please check if the backend server is running.`;
+      } else if (err.response?.status === 429) {
+        errorMessage += 'OpenAI API quota exceeded. Using fallback mode.';
+      } else {
+        errorMessage += err.response?.data?.error || err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -186,13 +219,25 @@ function App() {
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mr-3">
               <span className="text-white text-xl">📚</span>
             </div>
-            <div>
+            <div className="flex-1">
               <h2 className={`text-lg font-bold ${darkMode ? 'text-neutral-100' : 'text-neutral-900'}`}>
                 Andor
               </h2>
               <p className={`text-xs ${darkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>
                 Smart Flashcards
               </p>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${
+                backendStatus === 'connected' ? 'bg-green-500' : 
+                backendStatus === 'disconnected' ? 'bg-red-500' : 
+                'bg-yellow-500 animate-pulse'
+              }`}></div>
+              <span className={`text-xs ${darkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                {backendStatus === 'connected' ? 'Online' : 
+                 backendStatus === 'disconnected' ? 'Offline' : 
+                 'Checking...'}
+              </span>
             </div>
           </div>
           
