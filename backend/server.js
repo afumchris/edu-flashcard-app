@@ -311,12 +311,14 @@ Now analyze the document and extract ONLY valuable definitions and key concepts.
           }
           
           // Create chapter metadata
+          // Fix: Handle empty chapters correctly - endIndex should be startIndex - 1 for empty chapters
+          const cardCount = deck.card_count || deck.cards?.length || 0;
           chapters.push({
             id: index + 1,
             title: deck.chapter_title || `Chapter ${index + 1}`,
-            cards: deck.card_count || deck.cards?.length || 0,
+            cards: cardCount,
             startIndex: startIndex,
-            endIndex: flashcards.length - 1
+            endIndex: cardCount > 0 ? flashcards.length - 1 : startIndex - 1
           });
         });
       }
@@ -360,7 +362,8 @@ Now analyze the document and extract ONLY valuable definitions and key concepts.
         
         chapter.startIndex = flashcards.length;
         chapterFlashcards.forEach(card => flashcards.push(card));
-        chapter.endIndex = flashcards.length - 1;
+        // Fix: Handle empty chapters correctly - endIndex should be startIndex - 1 for empty chapters
+        chapter.endIndex = chapterFlashcards.length > 0 ? flashcards.length - 1 : chapter.startIndex - 1;
         chapter.cards = chapterFlashcards.length;
         
         // Clean up chapter object
