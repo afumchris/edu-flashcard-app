@@ -1,0 +1,101 @@
+COURSE: INTRODUCTION TO DATA SCIENCE
+Course Code: DS101
+Instructor: Dr. Smith
+
+================================================================================
+MODULE 1: FOUNDATIONS OF DATA SCIENCE
+================================================================================
+
+Unit 1.1: What is Data Science?
+
+Data Science is an interdisciplinary field that uses scientific methods, processes, algorithms and systems to extract knowledge and insights from structured and unstructured data.
+
+Big Data refers to extremely large datasets that may be analyzed computationally to reveal patterns, trends, and associations.
+
+Unit 1.2: The Data Science Process
+
+Data Collection is the process of gathering and measuring information on targeted variables in an established system. It enables one to answer relevant questions and evaluate outcomes.
+
+Data Cleaning is the process of detecting and correcting corrupt or inaccurate records from a dataset. It involves identifying incomplete, incorrect, or irrelevant parts of the data.
+
+Unit 1.3: Tools and Technologies
+
+Python is a high-level programming language widely used in data science for its simplicity and powerful libraries like NumPy, Pandas, and Scikit-learn.
+
+R Programming is a language and environment specifically designed for statistical computing and graphics.
+
+================================================================================
+MODULE 2: STATISTICAL ANALYSIS
+================================================================================
+
+Unit 2.1: Descriptive Statistics
+
+Mean is the average of a set of numbers, calculated by adding all values and dividing by the count of values.
+
+Median is the middle value in a dataset when the values are arranged in ascending or descending order.
+
+Standard Deviation is a measure of the amount of variation or dispersion in a set of values.
+
+Unit 2.2: Inferential Statistics
+
+Hypothesis Testing is a statistical method used to make inferences about population parameters based on sample data.
+
+P-Value is the probability of obtaining test results at least as extreme as the observed results, assuming the null hypothesis is true.
+
+Confidence Interval is a range of values that is likely to contain the true population parameter with a certain level of confidence.
+
+Unit 2.3: Probability Theory
+
+Probability Distribution is a mathematical function that provides the probabilities of occurrence of different possible outcomes in an experiment.
+
+Bayes Theorem describes the probability of an event based on prior knowledge of conditions that might be related to the event.
+
+================================================================================
+MODULE 3: MACHINE LEARNING FUNDAMENTALS
+================================================================================
+
+Unit 3.1: Supervised Learning
+
+Supervised Learning is a type of machine learning where the algorithm learns from labeled training data to make predictions on new, unseen data.
+
+Classification is a supervised learning task where the goal is to predict discrete class labels for input data.
+
+Regression is a supervised learning technique used to predict continuous numerical values based on input features.
+
+Unit 3.2: Unsupervised Learning
+
+Unsupervised Learning is a type of machine learning that finds hidden patterns or intrinsic structures in unlabeled data.
+
+Clustering is the task of grouping a set of objects such that objects in the same group are more similar to each other than to those in other groups.
+
+Dimensionality Reduction is the process of reducing the number of random variables under consideration by obtaining a set of principal variables.
+
+Unit 3.3: Model Evaluation
+
+Cross-Validation is a resampling technique used to evaluate machine learning models by training and testing on different portions of the data.
+
+Overfitting occurs when a model learns the training data too well, including its noise and outliers, resulting in poor performance on new data.
+
+Accuracy is the ratio of correctly predicted observations to the total observations in a classification model.
+
+================================================================================
+MODULE 4: DATA VISUALIZATION
+================================================================================
+
+Unit 4.1: Visualization Principles
+
+Data Visualization is the graphical representation of information and data using visual elements like charts, graphs, and maps.
+
+Exploratory Data Analysis (EDA) is an approach to analyzing datasets to summarize their main characteristics using visual methods.
+
+Unit 4.2: Visualization Tools
+
+Matplotlib is a comprehensive library for creating static, animated, and interactive visualizations in Python.
+
+Tableau is a powerful data visualization tool used in business intelligence to simplify raw data into easily understandable formats.
+
+Unit 4.3: Advanced Visualizations
+
+Heatmap is a data visualization technique that shows the magnitude of a phenomenon as color in two dimensions.
+
+Interactive Dashboard is a visual display of data that allows users to interact with and explore the information dynamically.
