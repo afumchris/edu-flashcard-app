@@ -310,11 +310,18 @@ app.post('/upload', upload.single('file'), async (req, res) => {
             // Create appropriate question based on source
             let question;
             if (item.source === 'qa') {
-              question = item.term; // Already a question
+              // Already a question - use as is
+              question = item.term;
+              // Ensure it ends with ?
+              if (!question.endsWith('?')) {
+                question += '?';
+              }
             } else if (item.source === 'list' || item.source === 'bullet') {
-              question = `What is ${item.term}?`;
+              // Format based on term structure
+              question = formatQuestionForTerm(item.term);
             } else {
-              question = `What is ${item.term}?`;
+              // Definition source - format appropriately
+              question = formatQuestionForTerm(item.term);
             }
             
             return {
@@ -392,6 +399,48 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 
 // Common words to filter out from key terms
 const commonWords = ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use'];
+
+/**
+ * Format a proper question for a term
+ */
+function formatQuestionForTerm(term) {
+  // Check if term is already a question
+  if (term.includes('?')) {
+    return term.endsWith('?') ? term : term + '?';
+  }
+  
+  // Check if term starts with question words
+  const questionStarters = ['what', 'who', 'when', 'where', 'why', 'how', 'which', 'define', 'explain', 'describe'];
+  const termLower = term.toLowerCase().trim();
+  
+  for (const starter of questionStarters) {
+    if (termLower.startsWith(starter)) {
+      // It's already phrased as a question, just add ?
+      return term.endsWith('?') ? term : term + '?';
+    }
+  }
+  
+  // Check if it's a process or method (use "What is the process of...")
+  if (term.toLowerCase().includes('process') || 
+      term.toLowerCase().includes('method') ||
+      term.toLowerCase().includes('technique')) {
+    return `What is the ${term}?`;
+  }
+  
+  // Check if it's plural (use "What are...")
+  if (term.endsWith('s') && !term.endsWith('ss') && !term.endsWith('us')) {
+    return `What are ${term}?`;
+  }
+  
+  // Check if term starts with vowel (use "an")
+  const firstChar = term.charAt(0).toLowerCase();
+  if (['a', 'e', 'i', 'o', 'u'].includes(firstChar)) {
+    return `What is an ${term}?`;
+  }
+  
+  // Default: "What is X?"
+  return `What is ${term}?`;
+}
 
 // Intelligent chapter/section detection - detects ANY type of content separation
 function detectChapters(text) {

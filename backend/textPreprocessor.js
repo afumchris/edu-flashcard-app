@@ -154,16 +154,16 @@ function extractDefinitionsImproved(text) {
   
   // More flexible patterns with better quality
   const patterns = [
-    // Pattern 1: "Term is/are definition" (most common)
+    // Pattern 1: "Term is/are definition" (most common) - but not at start of line after newline
     {
-      regex: /\b([A-Z][a-zA-Z\s]{2,50}?)\s+(?:is|are)\s+([^.!?\n]{20,400}?)(?:[.!?\n])/g,
+      regex: /(?<!\n\n)([A-Z][a-zA-Z\s-]{2,50}?)\s+(?:is|are)\s+([^.!?\n]{20,400}?)(?:[.!?\n])/g,
       termIndex: 1,
       defIndex: 2,
       priority: 10
     },
-    // Pattern 2: "Term: definition" (very common in educational content)
+    // Pattern 2: "Term: definition" (very common in educational content) - includes hyphens
     {
-      regex: /\n([A-Z][a-zA-Z\s]{2,40}):\s*([^.\n]{20,400}?)(?:[.\n])/g,
+      regex: /\n([A-Z][a-zA-Z\s-]{2,40}):\s*([^.\n]{20,400}?)(?:[.\n])/g,
       termIndex: 1,
       defIndex: 2,
       priority: 9
@@ -216,6 +216,42 @@ function extractDefinitionsImproved(text) {
     }
   });
   
+  // Also extract from "Define X" style questions if they have answers nearby
+  const definePattern = /(?:Define|Explain|Describe)\s+(?:extensively\s+)?(?:what\s+)?(?:an?\s+)?([A-Z][a-zA-Z\s]{2,50}?)(?:\?|\n)/gi;
+  let defineMatch;
+  
+  while ((defineMatch = definePattern.exec(text)) !== null) {
+    const term = defineMatch[1].trim();
+    
+    // Look for definition in the next 500 characters
+    const searchStart = defineMatch.index + defineMatch[0].length;
+    const searchEnd = Math.min(searchStart + 500, text.length);
+    const contextText = text.substring(searchStart, searchEnd);
+    
+    // Try to find a definition pattern
+    const defPatterns = [
+      new RegExp(`${term}\\s+(?:is|are)\\s+([^.!?\\n]{20,400}?)(?:[.!?\\n])`, 'i'),
+      /^([A-Z][^.!?\n]{20,400}?)(?:[.!?\n])/  // First sentence after the question
+    ];
+    
+    for (const defPattern of defPatterns) {
+      const defMatch = contextText.match(defPattern);
+      if (defMatch && defMatch[1]) {
+        const definition = defMatch[1].trim();
+        
+        if (isValidDefinition(term, definition)) {
+          definitions.push({
+            term: term,
+            definition: definition,
+            position: defineMatch.index,
+            priority: 8  // High priority for explicit "Define X" questions
+          });
+          break;
+        }
+      }
+    }
+  }
+  
   // Sort by priority and position
   definitions.sort((a, b) => {
     if (a.priority !== b.priority) return b.priority - a.priority;
@@ -248,6 +284,12 @@ function isValidDefinition(term, definition) {
   if (!/[a-zA-Z]{3,}/.test(term)) return false;
   if (!/[a-zA-Z]{10,}/.test(definition)) return false;
   
+  // Term should not contain newlines (indicates chapter header got included)
+  if (term.includes('\n')) return false;
+  
+  // Term should not be all caps with more than 3 words (likely a header)
+  if (term === term.toUpperCase() && wordCount > 3) return false;
+  
   // Blacklist check (minimal - only obvious non-content)
   const blacklist = [
     /^page\s+\d+$/i,
@@ -255,12 +297,17 @@ function isValidDefinition(term, definition) {
     /^unit\s+\d+$/i,
     /^section\s+\d+$/i,
     /^module\s+\d+$/i,
+    /^introduction to/i,
+    /^types of/i,
+    /^overview of/i,
     /click here/i,
     /^table of contents$/i,
     /^references$/i,
     /^bibliography$/i,
     /^index$/i,
-    /^appendix$/i
+    /^appendix$/i,
+    /^key components/i,
+    /^main characteristics/i
   ];
   
   for (const pattern of blacklist) {
@@ -276,6 +323,16 @@ function isValidDefinition(term, definition) {
   // Must not be a question word
   const questionWords = ['what', 'when', 'where', 'who', 'why', 'how'];
   if (questionWords.includes(term.toLowerCase().trim())) return false;
+  
+  // Term should not be a partial word (e.g., "Checking" from "Fact-Checking")
+  // Check if definition starts with the term or a related word
+  const termLower = term.toLowerCase();
+  const defLower = definition.toLowerCase();
+  
+  // If term is very short and definition doesn't mention it, likely a fragment
+  if (term.length < 5 && !defLower.includes(termLower)) {
+    return false;
+  }
   
   return true;
 }
@@ -358,7 +415,7 @@ function extractKeyConceptsFromLists(text) {
 }
 
 /**
- * Extract Q&A style content
+ * Extract Q&A style content with validation
  */
 function extractQAContent(text) {
   const qaItems = [];
@@ -371,9 +428,18 @@ function extractQAContent(text) {
     const question = match[1].trim();
     const answer = match[2].trim();
     
-    if (question.length >= 10 && answer.length >= 15) {
+    // Validate Q&A pair quality
+    if (isValidQAPair(question, answer)) {
+      // Convert to proper flashcard format
+      let formattedQuestion = question;
+      
+      // If question doesn't end with ?, add it
+      if (!formattedQuestion.endsWith('?')) {
+        formattedQuestion += '?';
+      }
+      
       qaItems.push({
-        term: question.replace(/\?$/, ''),
+        term: formattedQuestion,
         definition: answer,
         source: 'qa',
         priority: 11
@@ -384,6 +450,89 @@ function extractQAContent(text) {
   return qaItems;
 }
 
+/**
+ * Validate if a Q&A pair makes sense
+ */
+function isValidQAPair(question, answer) {
+  // Basic length checks
+  if (question.length < 10 || question.length > 200) return false;
+  if (answer.length < 15 || answer.length > 500) return false;
+  
+  // Question should be a proper question
+  const questionWords = ['what', 'who', 'when', 'where', 'why', 'how', 'which', 'define', 'explain', 'describe'];
+  const hasQuestionWord = questionWords.some(word => 
+    question.toLowerCase().includes(word)
+  );
+  
+  // If no question word and doesn't end with ?, it's probably not a real question
+  if (!hasQuestionWord && !question.includes('?')) return false;
+  
+  // Answer should not be another question
+  if (answer.includes('?') && answer.split('?').length > 2) return false;
+  
+  // Answer should not start with question words (indicates it's not an answer)
+  const answerLower = answer.toLowerCase().trim();
+  const startsWithQuestionWord = questionWords.some(word => 
+    answerLower.startsWith(word + ' ')
+  );
+  if (startsWithQuestionWord) return false;
+  
+  // Answer should not start with imperative verbs (commands/instructions)
+  const imperativeVerbs = ['trace', 'list', 'describe', 'explain', 'define', 'discuss', 'compare', 'analyze', 'evaluate', 'identify', 'outline', 'summarize', 'examine'];
+  const startsWithImperative = imperativeVerbs.some(verb => 
+    answerLower.startsWith(verb + ' ')
+  );
+  if (startsWithImperative) return false;
+  
+  // Answer should contain a verb (is, are, was, were, has, have, etc.)
+  const hasVerb = /\b(is|are|was|were|has|have|had|can|could|will|would|should|may|might|must|do|does|did)\b/i.test(answer);
+  if (!hasVerb) return false;
+  
+  // Check if answer seems to relate to question
+  // Extract key terms from question
+  const questionTerms = extractKeyTermsFromQuestion(question);
+  
+  // If question asks about a specific term, answer should contain related content
+  if (questionTerms.length > 0) {
+    // Answer should have some substantive content, not just another question
+    const answerWords = answer.toLowerCase().split(/\s+/);
+    if (answerWords.length < 5) return false;
+  }
+  
+  // Check for malformed questions (e.g., "What is Define X")
+  if (/what\s+is\s+(define|explain|describe|discuss)/i.test(question)) {
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Extract key terms from a question for validation
+ */
+function extractKeyTermsFromQuestion(question) {
+  const terms = [];
+  
+  // Remove question words
+  let cleaned = question.toLowerCase()
+    .replace(/^(what|who|when|where|why|how|which|define|explain|describe)\s+(is|are|was|were|do|does|did)?\s*/i, '');
+  
+  // Extract capitalized terms or quoted terms
+  const capitalizedPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/g;
+  const quotedPattern = /"([^"]+)"|'([^']+)'/g;
+  
+  let match;
+  while ((match = capitalizedPattern.exec(question)) !== null) {
+    terms.push(match[1].toLowerCase());
+  }
+  
+  while ((match = quotedPattern.exec(question)) !== null) {
+    terms.push((match[1] || match[2]).toLowerCase());
+  }
+  
+  return terms;
+}
+
 module.exports = {
   cleanText,
   extractChapterTitle,
@@ -392,5 +541,7 @@ module.exports = {
   extractKeyConceptsFromLists,
   extractQAContent,
   isValidDefinition,
+  isValidQAPair,
+  extractKeyTermsFromQuestion,
   scoreFlashcard
 };
