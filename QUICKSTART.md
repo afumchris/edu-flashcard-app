@@ -35,7 +35,7 @@ npm start
 
 ## What You'll See
 
-When you start the servers, you'll see output like this:
+When you start the servers, **wait for the compilation to complete**, then you'll see output like this:
 
 **Backend:**
 ```
@@ -52,13 +52,21 @@ When you start the servers, you'll see output like this:
 
 **Frontend:**
 ```
-🚀 Frontend Server Starting...
+Starting the development server...
+
+Compiled successfully!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 Frontend Server Ready!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📍 Frontend URL: https://3000--workspace-id.gitpod.dev
 🌐 Environment: Gitpod
 ⚡ Port: 3000
+✅ Status: Ready
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+**Note:** The URL banner appears AFTER "Compiled successfully!" - wait for it!
 
 ## Troubleshooting
 
@@ -85,6 +93,12 @@ pkill -f "react-scripts"
 # Restart
 cd frontend && npm start
 ```
+
+### Can't see the frontend URL
+- **Wait for compilation:** The URL appears AFTER "Compiled successfully!"
+- **Scroll up:** The URL might have scrolled past
+- **Check Ports panel:** Click the "Ports" tab in the bottom panel
+- **See detailed guide:** [VIEWING_PORTS.md](VIEWING_PORTS.md)
 
 ### Can't access the URLs
 - **Gitpod:** Make sure ports 3000 and 5002 are public (check Ports panel)

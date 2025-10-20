@@ -888,15 +888,23 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   
   // Detect environment
-  const isGitpod = process.env.GITPOD_WORKSPACE_ID !== undefined;
-  const gitpodUrl = process.env.GITPOD_WORKSPACE_URL;
+  const isGitpod = process.env.GITPOD_ENVIRONMENT_ID !== undefined;
   
-  if (isGitpod && gitpodUrl) {
-    // Extract workspace ID from GITPOD_WORKSPACE_URL
-    const workspaceUrl = gitpodUrl.replace('https://', '');
-    const backendUrl = `https://${PORT}--${workspaceUrl}`;
-    console.log(`📍 Backend URL: ${backendUrl}`);
-    console.log(`🌐 Environment: Gitpod`);
+  if (isGitpod) {
+    // Use Gitpod CLI to get the actual URL
+    try {
+      const { execSync } = require('child_process');
+      const url = execSync(`/usr/local/bin/gitpod environment port list | grep "^${PORT}" | awk '{print $3}'`, { encoding: 'utf-8' }).trim();
+      if (url) {
+        console.log(`📍 Backend URL: ${url}`);
+      } else {
+        console.log(`📍 Backend URL: Check PORTS panel for port ${PORT}`);
+      }
+      console.log(`🌐 Environment: Gitpod`);
+    } catch (err) {
+      console.log(`📍 Backend URL: Check PORTS panel for port ${PORT}`);
+      console.log(`🌐 Environment: Gitpod`);
+    }
   } else {
     console.log(`📍 Backend URL: http://localhost:${PORT}`);
     console.log(`🌐 Environment: Local`);
@@ -904,5 +912,6 @@ app.listen(PORT, '0.0.0.0', () => {
   
   console.log(`⚡ Port: ${PORT}`);
   console.log(`✅ Status: Ready`);
+  console.log(`💡 Tip: Use the PORTS panel to access the URL`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 });
