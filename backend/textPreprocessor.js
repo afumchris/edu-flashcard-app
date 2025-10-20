@@ -152,37 +152,56 @@ function detectChaptersEnhanced(text) {
 function extractDefinitionsImproved(text) {
   const definitions = [];
   
-  // More flexible patterns
+  // More flexible patterns with better quality
   const patterns = [
-    // Pattern 1: "Term is/are definition"
+    // Pattern 1: "Term is/are definition" (most common)
     {
-      regex: /([A-Z][a-zA-Z\s]{2,50}?)\s+(?:is|are)\s+(.{20,400}?)(?:\.|$)/gi,
+      regex: /\b([A-Z][a-zA-Z\s]{2,50}?)\s+(?:is|are)\s+([^.!?\n]{20,400}?)(?:[.!?\n])/g,
       termIndex: 1,
-      defIndex: 2
+      defIndex: 2,
+      priority: 10
     },
-    // Pattern 2: "Term: definition"
+    // Pattern 2: "Term: definition" (very common in educational content)
     {
-      regex: /([A-Z][a-zA-Z\s]{2,40}):\s*(.{20,400}?)(?:\n|$)/g,
+      regex: /\n([A-Z][a-zA-Z\s]{2,40}):\s*([^.\n]{20,400}?)(?:[.\n])/g,
       termIndex: 1,
-      defIndex: 2
+      defIndex: 2,
+      priority: 9
     },
-    // Pattern 3: "Term refers to/means definition"
+    // Pattern 3: "- Term: definition" (bullet points)
     {
-      regex: /([A-Z][a-zA-Z\s]{2,50}?)\s+(?:refers to|means)\s+(.{20,400}?)(?:\.|$)/gi,
+      regex: /-\s*([A-Z][a-zA-Z\s]{2,40}):\s*([^.\n]{20,400}?)(?:[.\n])/g,
       termIndex: 1,
-      defIndex: 2
+      defIndex: 2,
+      priority: 8
     },
-    // Pattern 4: "(Term) definition" or "Term (definition)"
+    // Pattern 4: "Term refers to/means definition"
     {
-      regex: /([A-Z][a-zA-Z\s]{2,40})\s*\(([^)]{20,200})\)/g,
+      regex: /\b([A-Z][a-zA-Z\s]{2,50}?)\s+(?:refers to|means|represents|denotes)\s+([^.!?\n]{20,400}?)(?:[.!?\n])/g,
       termIndex: 1,
-      defIndex: 2
+      defIndex: 2,
+      priority: 7
+    },
+    // Pattern 5: "The term definition" (explanatory)
+    {
+      regex: /\bThe\s+([a-zA-Z\s]{3,40}?)\s+(?:is|are)\s+([^.!?\n]{20,400}?)(?:[.!?\n])/gi,
+      termIndex: 1,
+      defIndex: 2,
+      priority: 6
+    },
+    // Pattern 6: "Term - definition" (dash separator)
+    {
+      regex: /\n([A-Z][a-zA-Z\s]{2,40})\s*[-–—]\s*([^.\n]{20,400}?)(?:[.\n])/g,
+      termIndex: 1,
+      defIndex: 2,
+      priority: 5
     }
   ];
   
   patterns.forEach(pattern => {
     let match;
-    while ((match = pattern.regex.exec(text)) !== null) {
+    const regex = new RegExp(pattern.regex);
+    while ((match = regex.exec(text)) !== null) {
       const term = match[pattern.termIndex]?.trim();
       const definition = match[pattern.defIndex]?.trim();
       
@@ -190,13 +209,20 @@ function extractDefinitionsImproved(text) {
         definitions.push({
           term: term,
           definition: definition,
-          position: match.index
+          position: match.index,
+          priority: pattern.priority
         });
       }
     }
   });
   
-  // Remove duplicates
+  // Sort by priority and position
+  definitions.sort((a, b) => {
+    if (a.priority !== b.priority) return b.priority - a.priority;
+    return a.position - b.position;
+  });
+  
+  // Remove duplicates (keep higher priority)
   const seen = new Set();
   return definitions.filter(def => {
     const key = def.term.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -212,31 +238,44 @@ function extractDefinitionsImproved(text) {
 function isValidDefinition(term, definition) {
   // Term validation
   const wordCount = term.split(/\s+/).length;
-  if (wordCount < 1 || wordCount > 8) return false;
-  if (term.includes(',')) return false;
-  if (term.length < 3 || term.length > 80) return false;
+  if (wordCount < 1 || wordCount > 10) return false;
+  if (term.length < 2 || term.length > 100) return false;
   
   // Definition validation
-  if (definition.length < 20 || definition.length > 400) return false;
+  if (definition.length < 15 || definition.length > 500) return false;
   
-  // Blacklist check (less aggressive)
+  // Must have some alphabetic content
+  if (!/[a-zA-Z]{3,}/.test(term)) return false;
+  if (!/[a-zA-Z]{10,}/.test(definition)) return false;
+  
+  // Blacklist check (minimal - only obvious non-content)
   const blacklist = [
-    /course\s+code/i,
-    /page\s+\d+/i,
-    /\d{4}-\d{4}/,  // Years
+    /^page\s+\d+$/i,
+    /^chapter\s+\d+$/i,
+    /^unit\s+\d+$/i,
+    /^section\s+\d+$/i,
+    /^module\s+\d+$/i,
     /click here/i,
-    /see (page|chapter|section)/i
+    /^table of contents$/i,
+    /^references$/i,
+    /^bibliography$/i,
+    /^index$/i,
+    /^appendix$/i
   ];
   
   for (const pattern of blacklist) {
-    if (pattern.test(term) || pattern.test(definition)) {
+    if (pattern.test(term.trim())) {
       return false;
     }
   }
   
-  // Must not be a pronoun
-  const pronouns = ['it', 'they', 'this', 'that', 'these', 'those'];
-  if (pronouns.includes(term.toLowerCase())) return false;
+  // Must not be just a pronoun
+  const pronouns = ['it', 'they', 'this', 'that', 'these', 'those', 'he', 'she', 'we'];
+  if (pronouns.includes(term.toLowerCase().trim())) return false;
+  
+  // Must not be a question word
+  const questionWords = ['what', 'when', 'where', 'who', 'why', 'how'];
+  if (questionWords.includes(term.toLowerCase().trim())) return false;
   
   return true;
 }
@@ -266,11 +305,92 @@ function scoreFlashcard(term, definition) {
   return Math.max(0, Math.min(100, score));
 }
 
+/**
+ * Extract key concepts from lists and bullet points
+ */
+function extractKeyConceptsFromLists(text) {
+  const concepts = [];
+  
+  // Pattern 1: "Key Concepts:" or "Important Points:" followed by list
+  const listHeaderPattern = /(?:Key Concepts?|Important (?:Points?|Milestones?|Terms?)|Main Ideas?|Core Concepts?):\s*\n((?:[-•*]\s*.+\n?)+)/gi;
+  let match;
+  
+  while ((match = listHeaderPattern.exec(text)) !== null) {
+    const listContent = match[1];
+    
+    // Extract each bullet point
+    const bulletPattern = /[-•*]\s*([^:\n]+):\s*([^\n]+)/g;
+    let bulletMatch;
+    
+    while ((bulletMatch = bulletPattern.exec(listContent)) !== null) {
+      const term = bulletMatch[1].trim();
+      const definition = bulletMatch[2].trim();
+      
+      if (term && definition && term.length >= 2 && definition.length >= 15) {
+        concepts.push({
+          term: term,
+          definition: definition,
+          source: 'list',
+          priority: 10
+        });
+      }
+    }
+  }
+  
+  // Pattern 2: Standalone bullet points with definitions
+  const standalonePattern = /^[-•*]\s*([A-Z][^:\n]{2,50}):\s*([^\n]{15,400})/gm;
+  
+  while ((match = standalonePattern.exec(text)) !== null) {
+    const term = match[1].trim();
+    const definition = match[2].trim();
+    
+    if (isValidDefinition(term, definition)) {
+      concepts.push({
+        term: term,
+        definition: definition,
+        source: 'bullet',
+        priority: 9
+      });
+    }
+  }
+  
+  return concepts;
+}
+
+/**
+ * Extract Q&A style content
+ */
+function extractQAContent(text) {
+  const qaItems = [];
+  
+  // Pattern: "Q: question" followed by "A: answer" or similar
+  const qaPattern = /(?:Q|Question):\s*([^\n?]+\??)\s*\n\s*(?:A|Answer):\s*([^\n]+)/gi;
+  let match;
+  
+  while ((match = qaPattern.exec(text)) !== null) {
+    const question = match[1].trim();
+    const answer = match[2].trim();
+    
+    if (question.length >= 10 && answer.length >= 15) {
+      qaItems.push({
+        term: question.replace(/\?$/, ''),
+        definition: answer,
+        source: 'qa',
+        priority: 11
+      });
+    }
+  }
+  
+  return qaItems;
+}
+
 module.exports = {
   cleanText,
   extractChapterTitle,
   detectChaptersEnhanced,
   extractDefinitionsImproved,
+  extractKeyConceptsFromLists,
+  extractQAContent,
   isValidDefinition,
   scoreFlashcard
 };

@@ -14,6 +14,8 @@ const {
   cleanText,
   detectChaptersEnhanced,
   extractDefinitionsImproved,
+  extractKeyConceptsFromLists,
+  extractQAContent,
   scoreFlashcard
 } = require('./textPreprocessor');
 
@@ -287,20 +289,59 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       chapters.forEach((chapter, chapterIndex) => {
         const chapterText = chapter.content;
         
-        // Use improved definition extraction
+        // Extract from multiple sources
         const definitions = extractDefinitionsImproved(chapterText);
-        console.log(`Chapter ${chapter.id}: Found ${definitions.length} definitions`);
+        const keyConcepts = extractKeyConceptsFromLists(chapterText);
+        const qaItems = extractQAContent(chapterText);
         
-        // Convert to flashcards with quality scoring
-        const chapterFlashcards = definitions
-          .map(def => ({
-            question: `What is ${def.term}?`,
-            answer: def.definition,
-            score: scoreFlashcard(def.term, def.definition)
-          }))
-          .filter(card => card.score >= 60)  // Only keep quality flashcards
-          .sort((a, b) => b.score - a.score)  // Best first
-          .slice(0, 15)  // Max 15 per chapter
+        console.log(`Chapter ${chapter.id}: Found ${definitions.length} definitions, ${keyConcepts.length} key concepts, ${qaItems.length} Q&A items`);
+        
+        // Combine all sources
+        const allItems = [
+          ...definitions.map(d => ({ ...d, source: 'definition' })),
+          ...keyConcepts,
+          ...qaItems
+        ];
+        
+        // Convert to flashcards with quality scoring and deduplication
+        const seenTerms = new Set();
+        const chapterFlashcards = allItems
+          .map(item => {
+            // Create appropriate question based on source
+            let question;
+            if (item.source === 'qa') {
+              question = item.term; // Already a question
+            } else if (item.source === 'list' || item.source === 'bullet') {
+              question = `What is ${item.term}?`;
+            } else {
+              question = `What is ${item.term}?`;
+            }
+            
+            return {
+              question: question,
+              answer: item.definition,
+              term: item.term,
+              score: scoreFlashcard(item.term, item.definition),
+              priority: item.priority || 5
+            };
+          })
+          .filter(card => {
+            // Filter by score
+            if (card.score < 50) return false;
+            
+            // Deduplicate by term (case-insensitive, normalized)
+            const normalizedTerm = card.term.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (seenTerms.has(normalizedTerm)) return false;
+            seenTerms.add(normalizedTerm);
+            
+            return true;
+          })
+          .sort((a, b) => {
+            // Sort by priority first, then score
+            if (a.priority !== b.priority) return b.priority - a.priority;
+            return b.score - a.score;
+          })
+          .slice(0, 20)  // Max 20 per chapter
           .map(card => ({
             question: card.question,
             answer: card.answer
