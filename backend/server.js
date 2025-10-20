@@ -34,7 +34,15 @@ dotenv.config();
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Initialize OpenAI client only if API key is provided
+let openai = null;
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  console.log('✅ OpenAI API key configured');
+} else {
+  console.log('⚠️  No OpenAI API key - using fallback mode');
+}
 
 // Enhanced CORS configuration
 app.use(cors({
@@ -162,6 +170,10 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       console.log(`Step 4: Text split into ${chunks.length} chunk(s)`);
       
       // Step 5: Process with optimized OpenAI configuration
+      if (!openai) {
+        throw new Error('OpenAI API not configured');
+      }
+      
       console.log('Step 5: Sending to OpenAI with optimized prompt...');
       const config = getOptimalConfig();
       const chunkResults = [];
@@ -871,4 +883,26 @@ app.get('/test-openai', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`Backend API running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 Backend API Server Started`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  
+  // Detect environment
+  const isGitpod = process.env.GITPOD_WORKSPACE_ID !== undefined;
+  const gitpodUrl = process.env.GITPOD_WORKSPACE_URL;
+  
+  if (isGitpod && gitpodUrl) {
+    // Extract workspace ID from GITPOD_WORKSPACE_URL
+    const workspaceUrl = gitpodUrl.replace('https://', '');
+    const backendUrl = `https://${PORT}--${workspaceUrl}`;
+    console.log(`📍 Backend URL: ${backendUrl}`);
+    console.log(`🌐 Environment: Gitpod`);
+  } else {
+    console.log(`📍 Backend URL: http://localhost:${PORT}`);
+    console.log(`🌐 Environment: Local`);
+  }
+  
+  console.log(`⚡ Port: ${PORT}`);
+  console.log(`✅ Status: Ready`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+});
